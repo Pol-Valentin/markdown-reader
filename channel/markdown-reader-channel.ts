@@ -135,6 +135,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   if (req.params.name === 'reply') {
     const { session_id, message } = args as any
+    if (!session_id || !message) {
+      throw new Error('reply requires session_id and message parameters')
+    }
     const json = JSON.stringify({ text: message })
     await sendToSocket(`reply:${session_id}:${json}\n`)
     return { content: [{ type: 'text', text: 'Reply sent' }] }
