@@ -206,6 +206,7 @@ The channel needs to find the right socket. It reuses the same D-Bus call as the
 
 **Chat panel (bottom of document):**
 - A collapsible panel anchored at the bottom of `#content-scroll`, **hidden by default** (`display: none`). The panel only shows when a commentable tab is active.
+- **Direct input area:** A single `<input type="text">` at the bottom of the panel. Enter sends the message. No send button, no auto-grow.
 - Displays the conversation thread: user comments (aligned right) and Claude replies (aligned left)
 - Each message shows a timestamp and the context (heading/selection) for user comments
 - Claude replies support markdown rendering (inline, simple — bold, code, links)
@@ -214,12 +215,17 @@ The channel needs to find the right socket. It reuses the same D-Bus call as the
 - Panel state (open/collapsed) persisted in localStorage per tab
 - **Resizable in height:** A `.chat-resizer` drag bar at the top of the chat panel allows users to drag and resize the messages area (min 80px, max 600px). The height is persisted in localStorage.
 
+**Sidebar toggle:**
+- A ☰ toggle button at fixed position (bottom-right, next to the ⇔ width toggle) hides/shows the sidebar
+- Adds `body.sidebar-hidden` class which hides `#sidebar` and `#sidebar-resizer` with `display: none`
+- State persisted in localStorage
+
 **Text selection commenting:**
 - Listen to `mouseup` on `#content`
 - If `window.getSelection()` is non-empty and the active tab is "commentable" (opened via MCP tool):
   - Show a small floating 💬 button near the selection
-  - On click: expand into a textarea + "Envoyer" button
-  - On submit: `invoke('send_comment', payload)` → message added to chat panel, form dismissed
+  - On click: expand into a single `<input type="text">` (no submit button)
+  - On Enter: `invoke('send_comment', payload)` → message added to chat panel, form dismissed
   - On click outside or Escape: dismiss
 
 **Block commenting (Mermaid/code):**

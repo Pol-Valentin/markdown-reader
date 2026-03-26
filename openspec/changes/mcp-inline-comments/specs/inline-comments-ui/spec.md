@@ -31,11 +31,15 @@ When the user clicks on a Mermaid diagram or a syntax-highlighted code block on 
 - **THEN** the highlight and 💬 button disappear
 
 ### Requirement: Comment form opens on button click
-When the user clicks the 💬 button, a comment form SHALL appear with a textarea and an "Envoyer" button. The form uses `position: fixed` and is appended to `document.body`.
+When the user clicks the 💬 button, a comment form SHALL appear with a single `<input type="text">`. The form uses `position: fixed` and is appended to `document.body`. Pressing Enter sends the comment. There is no submit button.
 
 #### Scenario: User opens comment form
 - **WHEN** user clicks the 💬 button
-- **THEN** a form appears with a textarea and "Envoyer" button positioned below the selection or block using viewport coordinates
+- **THEN** a form appears with a single text input positioned below the selection or block using viewport coordinates
+
+#### Scenario: User submits via Enter
+- **WHEN** user types a comment and presses Enter
+- **THEN** the comment is submitted
 
 #### Scenario: User dismisses form
 - **WHEN** user clicks outside the form or presses Escape
@@ -45,7 +49,7 @@ When the user clicks the 💬 button, a comment form SHALL appear with a textare
 When the user submits a comment, the frontend SHALL call `invoke('send_comment', payload)` with the comment payload including file, session_id, heading, selected_text, content_type, and comment.
 
 #### Scenario: User submits a text comment
-- **WHEN** user types "Add a diagram here" and clicks "Envoyer"
+- **WHEN** user types "Add a diagram here" and presses Enter
 - **THEN** `invoke('send_comment', { file: "/path/file.md", session_id: "abc", heading: "## Architecture", selected_text: "the passage", content_type: "text", comment: "Add a diagram here" })` is called
 - **THEN** the comment appears in the chat panel
 - **THEN** the form disappears
@@ -105,21 +109,32 @@ A collapsible chat panel SHALL appear at the bottom of `#main` (not inside `#con
 - **THEN** it becomes visible only when a commentable tab is activated
 
 ### Requirement: Chat panel has direct input area
-The chat panel SHALL include an input area at the bottom with a textarea and an "Envoyer" button, allowing users to send messages directly without selecting text. The textarea auto-grows up to 100px and supports Enter to send (Shift+Enter for newlines).
+The chat panel SHALL include an input area at the bottom with a single `<input type="text">`, allowing users to send messages directly without selecting text. Pressing Enter sends the message. There is no send button.
 
 #### Scenario: User sends a message from chat input
-- **WHEN** user types a message in the chat input textarea and clicks "Envoyer" (or presses Enter)
+- **WHEN** user types a message in the chat input and presses Enter
 - **THEN** the message is sent as a comment with empty `heading` and `selected_text` fields
 - **THEN** the message appears in the chat panel as a user message
-- **THEN** the textarea is cleared
+- **THEN** the input is cleared
 
-#### Scenario: Textarea auto-grows
-- **WHEN** user types multi-line text in the chat input
-- **THEN** the textarea height grows to accommodate the content up to 100px
+### Requirement: Sidebar can be hidden and shown
+A ☰ toggle button SHALL be displayed at a fixed position (bottom-right, next to the ⇔ width toggle). Clicking it toggles the `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. The visibility state SHALL be persisted in localStorage.
 
-#### Scenario: Shift+Enter inserts newline
-- **WHEN** user presses Shift+Enter in the chat input
-- **THEN** a newline is inserted instead of sending the message
+#### Scenario: User hides the sidebar
+- **WHEN** user clicks the ☰ toggle button while the sidebar is visible
+- **THEN** `body.sidebar-hidden` class is added
+- **THEN** `#sidebar` and `#sidebar-resizer` are hidden (`display: none`)
+- **THEN** the state is saved to localStorage
+
+#### Scenario: User shows the sidebar
+- **WHEN** user clicks the ☰ toggle button while the sidebar is hidden
+- **THEN** `body.sidebar-hidden` class is removed
+- **THEN** `#sidebar` and `#sidebar-resizer` become visible
+- **THEN** the state is saved to localStorage
+
+#### Scenario: State persisted across sessions
+- **WHEN** the user reopens the Reader
+- **THEN** the sidebar visibility is restored from localStorage
 
 ### Requirement: Chat panel is resizable in height
 The chat panel SHALL include a `.chat-resizer` drag bar at its top edge. Users SHALL be able to drag the resizer to adjust the messages area height between 80px and 600px. The height SHALL be persisted in localStorage.

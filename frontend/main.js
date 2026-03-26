@@ -165,6 +165,16 @@ document.addEventListener('mouseup', () => {
 const savedWidth = localStorage.getItem('sidebarWidth');
 if (savedWidth) sidebarEl.style.width = savedWidth;
 
+// --- Sidebar toggle ---
+const sidebarToggle = document.getElementById('sidebar-toggle');
+sidebarToggle.addEventListener('click', () => {
+  document.body.classList.toggle('sidebar-hidden');
+  localStorage.setItem('sidebarHidden', document.body.classList.contains('sidebar-hidden'));
+});
+if (localStorage.getItem('sidebarHidden') === 'true') {
+  document.body.classList.add('sidebar-hidden');
+}
+
 // --- Width toggle ---
 const widthToggle = document.getElementById('width-toggle');
 widthToggle.addEventListener('click', () => {

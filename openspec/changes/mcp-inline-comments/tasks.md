@@ -31,7 +31,7 @@
 - [x] 5.1 Create `frontend/comments.js` module with exports: `initComments(contentEl, getActiveTab)`
 - [x] 5.2 Implement text selection → floating 💬 button (mouseup listener, positioned near selection)
 - [x] 5.3 Implement Mermaid/code block click → highlight border + 💬 button
-- [x] 5.4 Implement comment form (textarea + "Envoyer" button), positioned below selection/block
+- [x] 5.4 Implement comment form (single `<input type="text">`, Enter to send, no button), positioned below selection/block
 - [x] 5.5 Implement nearest heading resolution — walk DOM backwards to find closest h1-h6
 - [x] 5.6 Implement comment submission — build payload, call `invoke('send_comment')`, dismiss form
 - [x] 5.7 Implement dismiss on click-outside and Escape key
@@ -39,7 +39,7 @@
 
 ## 6. Frontend — Chat Panel (JS)
 
-- [x] 6.1 Add chat panel HTML structure in `comments.js` — collapsible panel at bottom of `#main` (not `#content-scroll`), with direct input area (textarea + send button)
+- [x] 6.1 Add chat panel HTML structure in `comments.js` — collapsible panel at bottom of `#main` (not `#content-scroll`), with direct input area (single `<input type="text">`, Enter to send, no button)
 - [x] 6.2 Implement `appendUserComment(payload)` — display user message (right-aligned) with heading context and timestamp
 - [x] 6.3 Implement `appendClaudeReply(payload)` — display Claude message (left-aligned) with basic markdown rendering
 - [x] 6.4 Listen for `claude-reply` Tauri event in `main.js`, forward to chat panel
@@ -51,15 +51,24 @@
 ## 7. Frontend — Styles (CSS)
 
 - [x] 7.1 Add styles for floating 💬 button (positioned, hover state)
-- [x] 7.2 Add styles for comment form (textarea, submit button, positioning)
+- [x] 7.2 Add styles for comment form (text input, positioning)
 - [x] 7.3 Add styles for block highlight border (Mermaid/code)
 - [x] 7.4 Add styles for chat panel (collapsible, user vs Claude messages, timestamp, badge)
 - [x] 7.5 Add dark/light theme support for all new elements
 - [x] 7.6 Add font smoothing to body (antialiased, optimizeLegibility)
 - [x] 7.7 Remove `position: relative` from `#content-scroll` to fix rendering artifacts
 - [x] 7.8 Use `position: fixed` for comment button and form (appended to `document.body`)
-- [x] 7.9 Add chat input area styles (`.chat-input-area`, `.chat-input`, `.chat-send`)
+- [x] 7.9 Add chat input area styles (`.chat-input-area`, `.chat-input`)
 - [x] 7.10 Add chat resizer styles (`.chat-resizer`, `.chat-resizer.dragging`)
+- [x] 7.11 Add sidebar toggle button styles (☰ button, fixed bottom-right, next to ⇔ width toggle)
+- [x] 7.12 Add `body.sidebar-hidden` styles — hide `#sidebar` and `#sidebar-resizer` with `display: none`
+
+## 7b. Frontend — Sidebar Toggle (JS)
+
+- [x] 7b.1 Add ☰ toggle button (fixed position, bottom-right, next to ⇔ width toggle)
+- [x] 7b.2 Toggle `body.sidebar-hidden` class on click — hides `#sidebar` and `#sidebar-resizer` with `display: none`
+- [x] 7b.3 Persist sidebar visibility state in localStorage
+- [x] 7b.4 Restore sidebar visibility state on page load
 
 ## 8. Channel MCP Bridge (TypeScript)
 

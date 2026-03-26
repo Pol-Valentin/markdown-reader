@@ -26,10 +26,7 @@ export function initComments(content, getActiveTab) {
   commentForm.className = 'comment-form';
   commentForm.style.display = 'none';
   commentForm.innerHTML = `
-    <textarea class="comment-textarea" placeholder="Votre commentaire..." rows="3"></textarea>
-    <div class="comment-form-actions">
-      <button class="comment-submit">Envoyer</button>
-    </div>
+    <input class="comment-input" type="text" placeholder="Votre commentaire..." />
   `;
   document.body.appendChild(commentForm);
 
@@ -42,8 +39,13 @@ export function initComments(content, getActiveTab) {
   // Comment button click → open form
   commentBtn.addEventListener('click', onCommentBtnClick);
 
-  // Submit comment
-  commentForm.querySelector('.comment-submit').addEventListener('click', onSubmitComment);
+  // Submit comment on Enter
+  commentForm.querySelector('.comment-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onSubmitComment();
+    }
+  });
 
   // Dismiss on Escape
   document.addEventListener('keydown', (e) => {
@@ -138,9 +140,9 @@ function onCommentBtnClick(e) {
   commentForm.style.top = `${rect.bottom + 8}px`;
   commentBtn.style.display = 'none';
 
-  const textarea = commentForm.querySelector('.comment-textarea');
-  textarea.value = '';
-  textarea.focus();
+  const input = commentForm.querySelector('.comment-input');
+  input.value = '';
+  input.focus();
 }
 
 async function onSubmitComment() {
@@ -148,8 +150,8 @@ async function onSubmitComment() {
   const tab = getActiveTabFn();
   if (!tab || !tab.commentable) return;
 
-  const textarea = commentForm.querySelector('.comment-textarea');
-  const comment = textarea.value.trim();
+  const input = commentForm.querySelector('.comment-input');
+  const comment = input.value.trim();
   if (!comment) return;
 
   const payload = {
@@ -244,8 +246,7 @@ export function ensureChatPanel(scrollContainer) {
     </div>
     <div class="chat-messages"></div>
     <div class="chat-input-area">
-      <textarea class="chat-input" placeholder="Répondre..." rows="1"></textarea>
-      <button class="chat-send">Envoyer</button>
+      <input class="chat-input" type="text" placeholder="Répondre..." />
     </div>
   `;
   // Fixed position at bottom of #main, not inside scroll container
@@ -277,24 +278,16 @@ export function ensureChatPanel(scrollContainer) {
       await invoke('send_comment', { comment: payload });
       appendUserComment(tab.session_id, payload);
       chatInputEl.value = '';
-      chatInputEl.style.height = 'auto';
     } catch (err) {
       console.error('Failed to send message:', err);
     }
   }
 
-  chatSendBtn.addEventListener('click', sendChatMessage);
   chatInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter') {
       e.preventDefault();
       sendChatMessage();
     }
-  });
-
-  // Auto-grow textarea
-  chatInputEl.addEventListener('input', () => {
-    chatInputEl.style.height = 'auto';
-    chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 100) + 'px';
   });
 
   // Collapse/expand toggle
