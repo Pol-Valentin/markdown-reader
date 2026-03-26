@@ -56,6 +56,16 @@ export function initComments(content, getActiveTab) {
     if (e.key === 'Escape') dismiss();
   });
 
+  // Dismiss on scroll (button/form positions become stale)
+  const scrollContainer = document.getElementById('content-scroll');
+  if (scrollContainer) {
+    scrollContainer.addEventListener('scroll', () => {
+      if (commentBtn.style.display !== 'none' || commentForm.style.display !== 'none') {
+        dismiss();
+      }
+    });
+  }
+
   // Dismiss on click outside
   document.addEventListener('mousedown', (e) => {
     if (commentForm.style.display !== 'none' &&
@@ -245,10 +255,13 @@ export function setOnSessionChange(fn) {
 export function ensureChatPanel(scrollContainer) {
   if (chatPanelEl) return;
 
+  // Resizer lives outside the chat panel, above it in the flex layout
+  const chatResizer = document.createElement('div');
+  chatResizer.className = 'chat-resizer';
+
   chatPanelEl = document.createElement('div');
   chatPanelEl.className = 'chat-panel';
   chatPanelEl.innerHTML = `
-    <div class="chat-resizer"></div>
     <div class="chat-header">
       <span class="chat-title">💬</span>
       <select class="session-select">
@@ -262,8 +275,9 @@ export function ensureChatPanel(scrollContainer) {
       <input class="chat-input" type="text" placeholder="Répondre..." disabled />
     </div>
   `;
-  // Fixed position at bottom of #main, not inside scroll container
-  document.getElementById('main').appendChild(chatPanelEl);
+  const mainEl = document.getElementById('main');
+  mainEl.appendChild(chatResizer);
+  mainEl.appendChild(chatPanelEl);
 
   chatHeaderEl = chatPanelEl.querySelector('.chat-header');
   chatMessagesEl = chatPanelEl.querySelector('.chat-messages');
@@ -325,26 +339,29 @@ export function ensureChatPanel(scrollContainer) {
     }
   });
 
-  // Resize drag on top bar
-  const resizer = chatPanelEl.querySelector('.chat-resizer');
+  // Resize drag — resizer is a sibling above the chat panel
   let startY, startHeight;
-  resizer.addEventListener('mousedown', (e) => {
+  chatResizer.addEventListener('mousedown', (e) => {
     e.preventDefault();
     startY = e.clientY;
     startHeight = chatMessagesEl.offsetHeight;
-    resizer.classList.add('dragging');
+    chatResizer.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
 
-    const onMouseMove = (e) => {
-      const delta = startY - e.clientY; // dragging up = bigger
-      const newHeight = Math.max(80, Math.min(600, startHeight + delta));
-      chatMessagesEl.style.maxHeight = `${newHeight}px`;
+    const onMouseMove = (ev) => {
+      const delta = startY - ev.clientY;
+      const newHeight = Math.max(60, Math.min(500, startHeight + delta));
+      chatMessagesEl.style.height = `${newHeight}px`;
+      chatMessagesEl.style.maxHeight = 'none';
     };
     const onMouseUp = () => {
-      resizer.classList.remove('dragging');
+      chatResizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      // Save height to localStorage
-      localStorage.setItem('chat-panel-height', chatMessagesEl.style.maxHeight);
+      localStorage.setItem('chat-panel-height', chatMessagesEl.style.height);
     };
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
@@ -353,7 +370,8 @@ export function ensureChatPanel(scrollContainer) {
   // Restore saved height
   const savedHeight = localStorage.getItem('chat-panel-height');
   if (savedHeight) {
-    chatMessagesEl.style.maxHeight = savedHeight;
+    chatMessagesEl.style.height = savedHeight;
+    chatMessagesEl.style.maxHeight = 'none';
   }
 }
 

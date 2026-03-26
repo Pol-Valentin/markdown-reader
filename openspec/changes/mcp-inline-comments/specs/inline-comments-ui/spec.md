@@ -85,7 +85,7 @@ The Markdown renderer SHALL store the original source code in a `data-source` at
 - **THEN** the `pre` element has a `data-source` attribute containing the original code
 
 ### Requirement: Chat panel displays conversation on all tabs
-A collapsible chat panel SHALL appear at the bottom of `#main` (not inside `#content-scroll`) on ALL tabs, displaying user comments and Claude replies as a conversation thread. The panel header SHALL include a session selector dropdown (`<select class="session-select">`) that lists active sessions. The panel SHALL include a direct input area at the bottom for sending messages.
+A collapsible chat panel SHALL appear at the bottom of `#main` as a flex child (not `position: absolute`, not inside `#content-scroll`) on ALL tabs, displaying user comments and Claude replies as a conversation thread. The panel (`.chat-panel`) is a flex sibling of `#content-scroll` inside `#main`, which uses `display: flex; flex-direction: column`. The panel header SHALL include a session selector dropdown (`<select class="session-select">`) that lists active sessions. The panel SHALL include a direct input area at the bottom for sending messages.
 
 #### Scenario: User sends a comment
 - **WHEN** a comment is submitted
@@ -148,44 +148,42 @@ The chat panel SHALL include an input area at the bottom with a single `<input t
 - **THEN** the chat input and submit button are enabled
 
 ### Requirement: Sidebar can be hidden and shown
-A ◀ toggle button SHALL be displayed in the sidebar header. Clicking it hides the sidebar by adding `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. When hidden, a ▶ button SHALL appear in the top-left of `#main` to reopen the sidebar. The visibility state SHALL be persisted in localStorage.
+A single ☰ toggle button SHALL be displayed as the first element in the `#tab-bar` (left of the tabs), not in the sidebar header. Clicking it toggles sidebar visibility by adding/removing `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. The `#sidebar` has `border-right: 1px solid var(--border)` for visible separation in light mode. The visibility state SHALL be persisted in localStorage.
 
 #### Scenario: User hides the sidebar
-- **WHEN** user clicks the ◀ button in the sidebar header
+- **WHEN** user clicks the ☰ button in the tab bar
 - **THEN** `body.sidebar-hidden` class is added
 - **THEN** `#sidebar` and `#sidebar-resizer` are hidden
-- **THEN** a ▶ button appears in the top-left of `#main`
 - **THEN** the state is saved to localStorage
 
 #### Scenario: User shows the sidebar
-- **WHEN** user clicks the ▶ button while the sidebar is hidden
+- **WHEN** user clicks the ☰ button while the sidebar is hidden
 - **THEN** `body.sidebar-hidden` class is removed
 - **THEN** `#sidebar` and `#sidebar-resizer` become visible
-- **THEN** the ▶ button is hidden
 - **THEN** the state is saved to localStorage
 
 #### Scenario: State persisted across sessions
 - **WHEN** the user reopens the Reader
 - **THEN** the sidebar visibility is restored from localStorage
 
-### Requirement: Manual refresh button
-A ↻ button SHALL be displayed at a fixed position (bottom-right of `#main`, next to the ⇔ width toggle). Clicking it re-renders the active tab's content by re-reading the file from disk.
+### Requirement: Content action buttons (refresh and width toggle)
+The refresh (⟳) and width toggle (⬌/⬄) buttons SHALL be grouped inside a `#content-actions` container within `#content-scroll`. The container uses `position: sticky; bottom: 12px; float: right` so it scrolls with the content but sticks to the bottom of the visible scroll area. The buttons share a common background, border, and border-radius (pill bar). The group is semi-transparent (`opacity: 0.5`) and becomes fully opaque on hover. Width toggle icons: ⬌ (expand to full width) / ⬄ (center/constrain width).
 
 #### Scenario: User clicks refresh
-- **WHEN** user clicks the ↻ button while a tab is active
+- **WHEN** user clicks the ⟳ button while a tab is active
 - **THEN** the file content is re-read from disk and re-rendered
 
 #### Scenario: No active tab
-- **WHEN** user clicks the ↻ button with no tab open
+- **WHEN** user clicks the ⟳ button with no tab open
 - **THEN** nothing happens
 
 ### Requirement: Chat panel is resizable in height
-The chat panel SHALL include a `.chat-resizer` drag bar at its top edge. Users SHALL be able to drag the resizer to adjust the messages area height between 80px and 600px. The height SHALL be persisted in localStorage.
+The chat panel SHALL have a `.chat-resizer` element as a **separate DOM element** (flex sibling) positioned above the chat panel in `#main`, not inside `.chat-panel`. The resizer is 8px tall with a centered 40px bar indicator that turns blue (accent color) on hover. Users SHALL be able to drag the resizer to adjust the `height` (not `max-height`) of `.chat-messages` between 60px and 500px. The height SHALL be persisted in localStorage.
 
 #### Scenario: User drags resizer
 - **WHEN** user drags the `.chat-resizer` bar upward or downward
-- **THEN** the chat messages area height adjusts accordingly
-- **THEN** the height is clamped between 80px minimum and 600px maximum
+- **THEN** the `.chat-messages` element's `height` adjusts accordingly
+- **THEN** the height is clamped between 60px minimum and 500px maximum
 
 #### Scenario: Height persisted across sessions
 - **WHEN** the user resizes the chat panel and reopens the Reader
@@ -193,4 +191,12 @@ The chat panel SHALL include a `.chat-resizer` drag bar at its top edge. Users S
 
 #### Scenario: Default height
 - **WHEN** no height is stored in localStorage
-- **THEN** the chat panel uses a reasonable default height
+- **THEN** the chat panel uses a default height of 150px
+
+### Requirement: Comment button and form dismiss on content scroll
+The floating comment button (💬) and comment form SHALL be dismissed when the user scrolls `#content-scroll`. This is necessary because the button/form use `position: fixed` with viewport coordinates that become stale on scroll.
+
+#### Scenario: User scrolls while comment button is visible
+- **WHEN** the 💬 button or comment form is visible and the user scrolls `#content-scroll`
+- **THEN** both the button and form are dismissed
+- **THEN** any block highlight is cleared

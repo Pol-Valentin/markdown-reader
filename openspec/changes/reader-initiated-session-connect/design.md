@@ -35,9 +35,9 @@ Claude Code n'expose pas le nom de session ni le session ID dans l'environnement
 
 ### 3. Sélecteur dans le chat panel header
 
-**Decision:** Un `<select>` dans le header du chat panel, visible sur tous les tabs. Le chat panel n'est plus masqué sur les tabs non-commentables — il affiche le sélecteur + un message "Aucune session" si besoin.
+**Decision:** Un `<select>` dans le header du chat panel, visible sur tous les tabs. Le chat panel est un **flex child** de `#main` (pas `position: absolute`), positionné sous `#content-scroll` dans le flex column layout. Le `.chat-resizer` est un **élément DOM séparé** (sibling flex) au-dessus du chat panel dans `#main`, pas à l'intérieur — 8px de haut avec un indicateur de 40px centré, bleu au hover. Le chat panel n'est plus masqué sur les tabs non-commentables — il affiche le sélecteur + un message "Aucune session" si besoin.
 
-**Rationale:** L'utilisateur s'attend à trouver le sélecteur là où il interagit avec Claude. Le chat panel est l'endroit naturel. Le masquer sur les tabs non-commentables empêcherait d'initier la connexion.
+**Rationale:** L'utilisateur s'attend à trouver le sélecteur là où il interagit avec Claude. Le chat panel est l'endroit naturel. Le masquer sur les tabs non-commentables empêcherait d'initier la connexion. Le layout flex (vs absolute) assure que le panel participe au flow naturel sans chevaucher le contenu.
 
 ### 4. Identification par cwd + "il y a X min"
 
@@ -54,4 +54,4 @@ Claude Code n'expose pas le nom de session ni le session ID dans l'environnement
 ## Risks / Trade-offs
 
 - **Cwd identique pour plusieurs sessions** → Si l'utilisateur a 2 sessions sur le même projet, seul le timestamp les distingue. Acceptable pour le MVP.
-- **Le chat panel est maintenant toujours visible** → Changement de comportement par rapport à aujourd'hui. L'état "non connecté" doit être clair pour ne pas confondre.
+- **Le chat panel est maintenant toujours visible** → Changement de comportement par rapport à aujourd'hui. Le panel est un flex child de `#main` (pas absolute), avec un resizer séparé au-dessus. L'état "non connecté" doit être clair pour ne pas confondre.

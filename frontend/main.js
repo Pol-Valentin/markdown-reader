@@ -194,15 +194,12 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 
 // --- Sidebar toggle ---
 const sidebarToggle = document.getElementById('sidebar-toggle');
-const sidebarShow = document.getElementById('sidebar-show');
 
-function toggleSidebar(hidden) {
+sidebarToggle.addEventListener('click', () => {
+  const hidden = !document.body.classList.contains('sidebar-hidden');
   document.body.classList.toggle('sidebar-hidden', hidden);
   localStorage.setItem('sidebarHidden', hidden);
-}
-
-sidebarToggle.addEventListener('click', () => toggleSidebar(true));
-sidebarShow.addEventListener('click', () => toggleSidebar(false));
+});
 
 if (localStorage.getItem('sidebarHidden') === 'true') {
   document.body.classList.add('sidebar-hidden');
@@ -212,13 +209,16 @@ if (localStorage.getItem('sidebarHidden') === 'true') {
 const widthToggle = document.getElementById('width-toggle');
 widthToggle.addEventListener('click', () => {
   document.body.classList.toggle('full-width');
-  widthToggle.textContent = document.body.classList.contains('full-width') ? '⇤⇥' : '⇔';
-  localStorage.setItem('fullWidth', document.body.classList.contains('full-width'));
+  const isFullWidth = document.body.classList.contains('full-width');
+  widthToggle.textContent = isFullWidth ? '⬄' : '⬌';
+  widthToggle.title = isFullWidth ? 'Centrer' : 'Pleine largeur';
+  localStorage.setItem('fullWidth', isFullWidth);
 });
 // Restore preference
 if (localStorage.getItem('fullWidth') === 'true') {
   document.body.classList.add('full-width');
-  widthToggle.textContent = '⇤⇥';
+  widthToggle.textContent = '⬄';
+  widthToggle.title = 'Centrer';
 }
 
 // --- Disable native context menu globally ---

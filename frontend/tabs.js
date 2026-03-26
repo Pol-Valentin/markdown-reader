@@ -77,7 +77,10 @@ export function activateTab(index) {
 }
 
 export function renderTabBar(container) {
+  // Preserve the sidebar toggle button
+  const toggle = container.querySelector('#sidebar-toggle');
   container.innerHTML = '';
+  if (toggle) container.appendChild(toggle);
 
   tabs.forEach((tab, i) => {
     const el = document.createElement('div');
