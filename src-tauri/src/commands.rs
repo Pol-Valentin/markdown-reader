@@ -107,3 +107,9 @@ pub async fn send_comment(state: State<'_, AppState>, comment: Comment) -> Resul
     ipc::send_to_subscriber(&state.subscribers, &comment.session_id, &message).await;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_sessions(state: State<'_, AppState>) -> Result<Vec<ipc::SessionInfo>, String> {
+    let registry = state.session_registry.lock().await;
+    Ok(registry.values().cloned().collect())
+}

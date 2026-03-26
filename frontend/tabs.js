@@ -56,6 +56,20 @@ export function closeTab(index) {
   if (onTabChange) onTabChange(getActiveTab(), closedPath);
 }
 
+export function updateTabSession(sessionId) {
+  if (activeTabIndex < 0) return;
+  const tab = tabs[activeTabIndex];
+  tab.session_id = sessionId;
+  tab.commentable = true;
+}
+
+export function clearTabSession() {
+  if (activeTabIndex < 0) return;
+  const tab = tabs[activeTabIndex];
+  delete tab.session_id;
+  tab.commentable = false;
+}
+
 export function activateTab(index) {
   if (index < 0 || index >= tabs.length) return;
   activeTabIndex = index;

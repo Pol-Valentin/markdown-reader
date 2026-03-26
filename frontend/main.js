@@ -3,7 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { renderMarkdown, renderMermaidDiagrams, generateTOC } from './renderer.js';
 import { openTab, closeTab, getActiveTab, getTabs, setOnTabChange, renderTabBar } from './tabs.js';
 import { renderSidebar, setCallbacks as setSidebarCallbacks } from './sidebar.js';
-import { initComments, ensureChatPanel, appendClaudeReply, updateChatVisibility } from './comments.js';
+import { initComments, ensureChatPanel, appendClaudeReply, updateChatVisibility, updateSessionList, setOnSessionChange } from './comments.js';
+import { updateTabSession, clearTabSession } from './tabs.js';
 
 // DOM elements
 const sidebarEl = document.getElementById('sidebar');
@@ -134,6 +135,26 @@ listen('claude-reply', async (event) => {
   appendClaudeReply(session_id, text);
 });
 
+listen('sessions-changed', async () => {
+  await refreshSessions();
+});
+
+async function refreshSessions() {
+  try {
+    const sessions = await invoke('get_sessions');
+    updateSessionList(sessions);
+    // Check if any tab's session is gone
+    const sessionIds = new Set(sessions.map(s => s.session_id));
+    const tab = getActiveTab();
+    if (tab && tab.session_id && !sessionIds.has(tab.session_id)) {
+      clearTabSession();
+      updateChatVisibility();
+    }
+  } catch (err) {
+    console.error('Failed to get sessions:', err);
+  }
+}
+
 // --- Sidebar resize ---
 const resizer = document.getElementById('sidebar-resizer');
 let isResizing = false;
@@ -214,6 +235,15 @@ async function init() {
   // Initialize comment system
   initComments(contentEl, getActiveTab);
   ensureChatPanel(document.getElementById('content-scroll'));
+
+  // Set up session change callback
+  setOnSessionChange((sessionId) => {
+    updateTabSession(sessionId);
+    updateChatVisibility();
+  });
+
+  // Populate session list
+  await refreshSessions();
 
   // Open initial file if passed via CLI
   try {

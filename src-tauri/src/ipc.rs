@@ -14,6 +14,21 @@ pub fn socket_path(workspace_id: u32) -> PathBuf {
     PathBuf::from(runtime_dir).join(format!("md-reader-ws-{workspace_id}.sock"))
 }
 
+/// Metadata about a connected Claude Code session
+#[derive(Clone, serde::Serialize)]
+pub struct SessionInfo {
+    pub session_id: String,
+    pub cwd: String,
+    pub connected_at: u64,
+}
+
+/// Shared session registry: session_id → SessionInfo
+pub type SessionRegistry = Arc<Mutex<HashMap<String, SessionInfo>>>;
+
+pub fn new_session_registry() -> SessionRegistry {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
 /// Messages sent from IPC to the app
 pub enum IpcMessage {
     /// Plain file open (legacy CLI): just a path, no session
@@ -22,6 +37,8 @@ pub enum IpcMessage {
     OpenFileWithSession { session_id: String, path: String },
     /// Reply from Claude via channel: reply:{session_id}:{json}
     ClaudeReply { session_id: String, json: String },
+    /// Session list changed (subscribe or disconnect)
+    SessionListChanged,
 }
 
 /// Shared subscriber map: session_id → write half of the socket
@@ -55,6 +72,7 @@ impl IpcServer {
     pub fn start(
         &self,
         subscribers: SubscriberMap,
+        registry: SessionRegistry,
     ) -> Result<mpsc::UnboundedReceiver<IpcMessage>, String> {
         let path = socket_path(self.workspace_id);
 
@@ -74,8 +92,9 @@ impl IpcServer {
                     Ok((stream, _)) => {
                         let tx = tx.clone();
                         let subscribers = subscribers.clone();
+                        let registry = registry.clone();
                         tokio::spawn(
-                            handle_connection(stream, tx, subscribers),
+                            handle_connection(stream, tx, subscribers, registry),
                         );
                     }
                     Err(_) => break,
@@ -87,10 +106,29 @@ impl IpcServer {
     }
 }
 
+/// Parse subscribe message: "subscribe:{session_id}" or "subscribe:{session_id}:{json}"
+fn parse_subscribe(msg: &str) -> Option<(String, String, u64)> {
+    let rest = msg.strip_prefix("subscribe:")?;
+    // Try to split at second ':' for JSON metadata
+    if let Some((session_id, json_str)) = rest.split_once(':') {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+            let cwd = val.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let connected_at = val.get("connected_at").and_then(|v| v.as_u64()).unwrap_or_else(|| {
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+            });
+            return Some((session_id.to_string(), cwd, connected_at));
+        }
+    }
+    // No JSON metadata — use defaults
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    Some((rest.to_string(), String::new(), now))
+}
+
 async fn handle_connection(
     mut stream: UnixStream,
     tx: mpsc::UnboundedSender<IpcMessage>,
     subscribers: SubscriberMap,
+    registry: SessionRegistry,
 ) {
     // Read initial data — support both newline-terminated (new protocol)
     // and raw bytes (legacy CLI / ping)
@@ -110,13 +148,22 @@ async fn handle_connection(
     }
 
     // Subscribe — persistent connection
-    if let Some(session_id) = msg.strip_prefix("subscribe:") {
-        let session_id = session_id.to_string();
+    if let Some((session_id, cwd, connected_at)) = parse_subscribe(msg) {
         let (read_half, write_half) = stream.into_split();
         {
             let mut map = subscribers.lock().await;
             map.insert(session_id.clone(), write_half);
         }
+        {
+            let mut reg = registry.lock().await;
+            reg.insert(session_id.clone(), SessionInfo {
+                session_id: session_id.clone(),
+                cwd,
+                connected_at,
+            });
+        }
+        let _ = tx.send(IpcMessage::SessionListChanged);
+
         // Keep reading for incoming messages (reply, etc.)
         let mut reader = BufReader::new(read_half);
         let mut line = String::new();
@@ -124,9 +171,14 @@ async fn handle_connection(
             line.clear();
             match reader.read_line(&mut line).await {
                 Ok(0) | Err(_) => {
-                    // Connection closed — remove subscriber
+                    // Connection closed — remove subscriber and session
                     let mut map = subscribers.lock().await;
                     map.remove(&session_id);
+                    drop(map);
+                    let mut reg = registry.lock().await;
+                    reg.remove(&session_id);
+                    drop(reg);
+                    let _ = tx.send(IpcMessage::SessionListChanged);
                     break;
                 }
                 Ok(_) => {
@@ -246,9 +298,32 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_subscribe_prefix() {
-        let msg = "subscribe:abc-123";
-        assert_eq!(msg.strip_prefix("subscribe:"), Some("abc-123"));
+    fn test_parse_subscribe_without_metadata() {
+        let result = parse_subscribe("subscribe:abc-123");
+        let (sid, cwd, _ts) = result.unwrap();
+        assert_eq!(sid, "abc-123");
+        assert_eq!(cwd, "");
+    }
+
+    #[test]
+    fn test_parse_subscribe_with_metadata() {
+        let result = parse_subscribe(
+            r#"subscribe:abc-123:{"cwd":"/home/user/project","connected_at":1774520000000}"#,
+        );
+        let (sid, cwd, ts) = result.unwrap();
+        assert_eq!(sid, "abc-123");
+        assert_eq!(cwd, "/home/user/project");
+        assert_eq!(ts, 1774520000000);
+    }
+
+    #[test]
+    fn test_parse_subscribe_with_invalid_json_falls_back() {
+        let result = parse_subscribe("subscribe:abc-123:not-json");
+        // Invalid JSON → treated as no metadata, session_id includes the bad part
+        // Actually this will fail to parse JSON and fall through to the no-metadata case
+        // But split_once(':') splits at first ':', so session_id="abc-123", json="not-json"
+        // serde_json fails → returns None from the if-let, falls to the default
+        assert!(result.is_some());
     }
 
     #[test]

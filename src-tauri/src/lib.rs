@@ -12,6 +12,7 @@ pub struct AppState {
     pub workspace_id: u32,
     pub file_watcher: Mutex<Option<watcher::FileWatcher>>,
     pub subscribers: ipc::SubscriberMap,
+    pub session_registry: ipc::SessionRegistry,
 }
 
 pub fn run() {
@@ -60,6 +61,7 @@ pub fn run_with_args(args: Vec<String>) {
     }
 
     let subscribers = ipc::new_subscriber_map();
+    let session_registry = ipc::new_session_registry();
 
     tauri::Builder::default()
         .manage(AppState {
@@ -67,6 +69,7 @@ pub fn run_with_args(args: Vec<String>) {
             workspace_id,
             file_watcher: Mutex::new(None),
             subscribers: subscribers.clone(),
+            session_registry: session_registry.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
@@ -80,6 +83,7 @@ pub fn run_with_args(args: Vec<String>) {
             commands::watch_file,
             commands::unwatch_file,
             commands::send_comment,
+            commands::get_sessions,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -106,6 +110,7 @@ pub fn run_with_args(args: Vec<String>) {
             let ipc_server = ipc::IpcServer::new(workspace_id);
             let ipc_handle = handle.clone();
             let ipc_subscribers = subscribers.clone();
+            let ipc_registry = session_registry.clone();
             // We need a tokio runtime for the IPC server
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -113,7 +118,7 @@ pub fn run_with_args(args: Vec<String>) {
                     .build()
                     .unwrap();
                 rt.block_on(async {
-                    if let Ok(mut rx) = ipc_server.start(ipc_subscribers) {
+                    if let Ok(mut rx) = ipc_server.start(ipc_subscribers, ipc_registry) {
                         while let Some(msg) = rx.recv().await {
                             match msg {
                                 ipc::IpcMessage::OpenFile(path) => {
@@ -132,6 +137,9 @@ pub fn run_with_args(args: Vec<String>) {
                                     if let Some(window) = ipc_handle.webview_windows().values().next() {
                                         let _ = window.set_focus();
                                     }
+                                }
+                                ipc::IpcMessage::SessionListChanged => {
+                                    let _ = ipc_handle.emit("sessions-changed", ());
                                 }
                                 ipc::IpcMessage::ClaudeReply { session_id, json } => {
                                     #[derive(serde::Serialize, Clone)]

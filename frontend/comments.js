@@ -232,25 +232,34 @@ function findHeadingInElement(el) {
 let chatPanelEl = null;
 let chatMessagesEl = null;
 let chatHeaderEl = null;
+let sessionSelectEl = null;
+let chatInputEl = null;
 let unreadCount = 0;
 let isCollapsed = false;
+let onSessionChangeFn = null; // callback set from main.js
+
+export function setOnSessionChange(fn) {
+  onSessionChangeFn = fn;
+}
 
 export function ensureChatPanel(scrollContainer) {
   if (chatPanelEl) return;
 
   chatPanelEl = document.createElement('div');
   chatPanelEl.className = 'chat-panel';
-  chatPanelEl.style.display = 'none'; // Hidden until a commentable tab is active
   chatPanelEl.innerHTML = `
     <div class="chat-resizer"></div>
     <div class="chat-header">
-      <span class="chat-title">💬 Conversation</span>
+      <span class="chat-title">💬</span>
+      <select class="session-select">
+        <option value="">Sélectionner une session...</option>
+      </select>
       <span class="chat-badge" style="display:none">0</span>
       <span class="chat-toggle">▼</span>
     </div>
     <div class="chat-messages"></div>
     <div class="chat-input-area">
-      <input class="chat-input" type="text" placeholder="Répondre..." />
+      <input class="chat-input" type="text" placeholder="Répondre..." disabled />
     </div>
   `;
   // Fixed position at bottom of #main, not inside scroll container
@@ -258,9 +267,20 @@ export function ensureChatPanel(scrollContainer) {
 
   chatHeaderEl = chatPanelEl.querySelector('.chat-header');
   chatMessagesEl = chatPanelEl.querySelector('.chat-messages');
+  sessionSelectEl = chatPanelEl.querySelector('.session-select');
+  chatInputEl = chatPanelEl.querySelector('.chat-input');
 
-  const chatInputEl = chatPanelEl.querySelector('.chat-input');
-  const chatSendBtn = chatPanelEl.querySelector('.chat-send');
+  // Session selector change
+  sessionSelectEl.addEventListener('change', () => {
+    const sessionId = sessionSelectEl.value;
+    if (sessionId && onSessionChangeFn) {
+      onSessionChangeFn(sessionId);
+      chatInputEl.disabled = false;
+      chatMessagesEl.innerHTML = ''; // Clear messages on session change
+    } else {
+      chatInputEl.disabled = true;
+    }
+  });
 
   // Send message from chat input
   async function sendChatMessage() {
@@ -402,11 +422,72 @@ export function hideChatPanel() {
 
 export function updateChatVisibility() {
   const tab = getActiveTabFn();
-  if (tab && tab.commentable) {
+  // Chat panel always visible when a tab is open
+  if (tab) {
     showChatPanel();
+    // Update input state based on commentable
+    if (chatInputEl) {
+      chatInputEl.disabled = !tab.commentable;
+    }
+    // Pre-select session if tab is connected
+    if (sessionSelectEl && tab.session_id) {
+      sessionSelectEl.value = tab.session_id;
+    } else if (sessionSelectEl) {
+      sessionSelectEl.value = '';
+    }
   } else {
     hideChatPanel();
   }
+}
+
+function formatTimeAgo(timestampMs) {
+  const diff = Date.now() - timestampMs;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'à l\'instant';
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours}h`;
+  return `il y a ${Math.floor(hours / 24)}j`;
+}
+
+function formatCwd(cwd) {
+  const home = '/home/' + (cwd.split('/')[2] || '');
+  if (cwd.startsWith(home)) return '~' + cwd.slice(home.length);
+  return cwd;
+}
+
+export function updateSessionList(sessions) {
+  if (!sessionSelectEl) return;
+  const currentValue = sessionSelectEl.value;
+  sessionSelectEl.innerHTML = '<option value="">Sélectionner une session...</option>';
+
+  if (sessions.length === 0) {
+    sessionSelectEl.innerHTML = '<option value="">Aucune session Claude active</option>';
+    sessionSelectEl.disabled = true;
+    if (chatInputEl) chatInputEl.disabled = true;
+    return;
+  }
+
+  sessionSelectEl.disabled = false;
+  for (const s of sessions) {
+    const opt = document.createElement('option');
+    opt.value = s.session_id;
+    const shortId = s.session_id.slice(0, 8);
+    const cwd = s.cwd ? formatCwd(s.cwd) : '?';
+    opt.textContent = `${cwd} (${shortId}) — ${formatTimeAgo(s.connected_at)}`;
+    sessionSelectEl.appendChild(opt);
+  }
+
+  // Restore selection if still valid
+  if (currentValue && sessions.some(s => s.session_id === currentValue)) {
+    sessionSelectEl.value = currentValue;
+  }
+}
+
+export function onSessionDisconnected(sessionId) {
+  // Called from main.js when sessions-changed and a tab's session is gone
+  // updateChatVisibility will handle the UI update
+  updateChatVisibility();
 }
 
 function updateBadge() {

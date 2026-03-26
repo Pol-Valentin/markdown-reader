@@ -521,6 +521,28 @@ body.sidebar-hidden #sidebar-show { display: block; }
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.session-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.session-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.session-select:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .chat-badge {
@@ -613,6 +635,10 @@ body.sidebar-hidden #sidebar-show { display: block; }
 .chat-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+.chat-input:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .chat-context {

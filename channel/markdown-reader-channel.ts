@@ -171,18 +171,40 @@ async function sendToSocket(message: string): Promise<void> {
   })
 }
 
+function tryReconnectWithoutRelaunch() {
+  const interval = setInterval(async () => {
+    if (socketReady) {
+      clearInterval(interval)
+      return
+    }
+    const workspaceId = getWorkspaceId()
+    const socketPath = getSocketPath(workspaceId)
+    if (await pingSocket(socketPath)) {
+      clearInterval(interval)
+      try {
+        await connectToSocket(workspaceId, socketPath)
+      } catch {}
+    }
+  }, 5000)
+}
+
 async function connectAndSubscribe() {
   const workspaceId = getWorkspaceId()
   const socketPath = getSocketPath(workspaceId)
 
   await ensureReaderRunning(workspaceId, socketPath)
+  await connectToSocket(workspaceId, socketPath)
+}
+
+async function connectToSocket(_workspaceId: number, socketPath: string) {
 
   socket = createConnection(socketPath)
 
   socket.on('connect', () => {
     socketReady = true
-    // Subscribe with our session ID
-    socket!.write(`subscribe:${SESSION_ID}\n`)
+    // Subscribe with our session ID + metadata
+    const meta = JSON.stringify({ cwd: process.cwd(), connected_at: Date.now() })
+    socket!.write(`subscribe:${SESSION_ID}:${meta}\n`)
   })
 
   // Handle incoming data (comments from the Reader)
@@ -227,13 +249,16 @@ async function connectAndSubscribe() {
   socket.on('close', () => {
     socketReady = false
     socket = null
-    // Don't reconnect automatically — the Reader was closed intentionally.
-    // The next open_file call will re-launch and reconnect.
+    // Try to reconnect periodically (without relaunching the Reader).
+    // If the user manually restarts the Reader, we'll pick it up.
+    tryReconnectWithoutRelaunch()
   })
 }
 
 // --- Start ---
 await mcp.connect(new StdioServerTransport())
 
-// Lazy connect: don't connect at startup, wait for first open_file call.
-// sendToSocket() auto-connects when needed (calls connectAndSubscribe).
+// Try to connect at startup (non-blocking). If the Reader is running,
+// the session appears in the selector immediately. If not, we'll
+// connect lazily on the first open_file call.
+tryReconnectWithoutRelaunch()
