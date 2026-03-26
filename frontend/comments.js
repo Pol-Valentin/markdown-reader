@@ -26,7 +26,10 @@ export function initComments(content, getActiveTab) {
   commentForm.className = 'comment-form';
   commentForm.style.display = 'none';
   commentForm.innerHTML = `
-    <input class="comment-input" type="text" placeholder="Votre commentaire..." />
+    <div class="comment-form-row">
+      <input class="comment-input" type="text" placeholder="Votre commentaire..." />
+      <button class="comment-submit">➤</button>
+    </div>
   `;
   document.body.appendChild(commentForm);
 
@@ -39,7 +42,8 @@ export function initComments(content, getActiveTab) {
   // Comment button click → open form
   commentBtn.addEventListener('click', onCommentBtnClick);
 
-  // Submit comment on Enter
+  // Submit comment on Enter or click
+  commentForm.querySelector('.comment-submit').addEventListener('click', onSubmitComment);
   commentForm.querySelector('.comment-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();

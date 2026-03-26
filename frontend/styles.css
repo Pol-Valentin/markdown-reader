@@ -140,23 +140,24 @@ body.full-width #content {
   font-size: 16px;
 }
 
-/* Sidebar toggle button */
-#sidebar-toggle {
-  position: fixed;
-  bottom: 16px;
-  right: 56px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  z-index: 100;
-  opacity: 0.6;
-  transition: opacity 0.15s;
+/* Sidebar header with toggle */
+#sidebar-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
 }
-#sidebar-toggle:hover { opacity: 1; }
+
+#sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+#sidebar-toggle:hover { background: var(--hover); color: var(--text-primary); }
 
 /* Sidebar hidden state */
 body.sidebar-hidden #sidebar,
@@ -164,9 +165,27 @@ body.sidebar-hidden #sidebar-resizer {
   display: none;
 }
 
+/* Show sidebar button (visible only when sidebar is hidden) */
+#sidebar-show {
+  display: none;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  z-index: 100;
+}
+#sidebar-show:hover { background: var(--hover); color: var(--text-primary); }
+body.sidebar-hidden #sidebar-show { display: block; }
+
 /* Width toggle button */
 #width-toggle {
-  position: fixed;
+  position: absolute;
   bottom: 16px;
   right: 16px;
   background: var(--bg-secondary);
@@ -176,7 +195,7 @@ body.sidebar-hidden #sidebar-resizer {
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  z-index: 100;
+  z-index: 160;
   opacity: 0.6;
   transition: opacity 0.15s;
 }
@@ -404,13 +423,18 @@ body.sidebar-hidden #sidebar-resizer {
   width: 300px;
 }
 
+.comment-form-row {
+  display: flex;
+  gap: 4px;
+}
+
 .comment-input {
-  width: 100%;
+  flex: 1;
   background: var(--bg-primary);
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   font-size: 13px;
   font-family: inherit;
 }
@@ -418,6 +442,18 @@ body.sidebar-hidden #sidebar-resizer {
   outline: none;
   border-color: var(--accent);
 }
+
+.comment-submit {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.comment-submit:hover { opacity: 0.9; }
 
 /* Block highlight */
 .comment-highlight {

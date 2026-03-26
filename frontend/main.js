@@ -167,10 +167,16 @@ if (savedWidth) sidebarEl.style.width = savedWidth;
 
 // --- Sidebar toggle ---
 const sidebarToggle = document.getElementById('sidebar-toggle');
-sidebarToggle.addEventListener('click', () => {
-  document.body.classList.toggle('sidebar-hidden');
-  localStorage.setItem('sidebarHidden', document.body.classList.contains('sidebar-hidden'));
-});
+const sidebarShow = document.getElementById('sidebar-show');
+
+function toggleSidebar(hidden) {
+  document.body.classList.toggle('sidebar-hidden', hidden);
+  localStorage.setItem('sidebarHidden', hidden);
+}
+
+sidebarToggle.addEventListener('click', () => toggleSidebar(true));
+sidebarShow.addEventListener('click', () => toggleSidebar(false));
+
 if (localStorage.getItem('sidebarHidden') === 'true') {
   document.body.classList.add('sidebar-hidden');
 }

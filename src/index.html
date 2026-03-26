@@ -7,17 +7,21 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="sidebar"></div>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <button id="sidebar-toggle" title="Masquer la sidebar">◀</button>
+    </div>
+  </div>
   <div id="sidebar-resizer"></div>
   <div id="main">
+    <button id="sidebar-show" title="Afficher la sidebar">▶</button>
     <div id="tab-bar"></div>
     <div id="content-scroll">
       <div id="content"></div>
     </div>
     <div id="empty-state">Ouvrir un fichier Markdown pour commencer</div>
+    <button id="width-toggle" title="Basculer pleine largeur / centré">⇔</button>
   </div>
-  <button id="sidebar-toggle" title="Afficher/masquer la sidebar">☰</button>
-  <button id="width-toggle" title="Basculer pleine largeur / centré">⇔</button>
   <script type="module" src="bundle.js"></script>
 </body>
 </html>
