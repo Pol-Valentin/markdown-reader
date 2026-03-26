@@ -118,23 +118,36 @@ The chat panel SHALL include an input area at the bottom with a single `<input t
 - **THEN** the input is cleared
 
 ### Requirement: Sidebar can be hidden and shown
-A ☰ toggle button SHALL be displayed at a fixed position (bottom-right, next to the ⇔ width toggle). Clicking it toggles the `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. The visibility state SHALL be persisted in localStorage.
+A ◀ toggle button SHALL be displayed in the sidebar header. Clicking it hides the sidebar by adding `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. When hidden, a ▶ button SHALL appear in the top-left of `#main` to reopen the sidebar. The visibility state SHALL be persisted in localStorage.
 
 #### Scenario: User hides the sidebar
-- **WHEN** user clicks the ☰ toggle button while the sidebar is visible
+- **WHEN** user clicks the ◀ button in the sidebar header
 - **THEN** `body.sidebar-hidden` class is added
-- **THEN** `#sidebar` and `#sidebar-resizer` are hidden (`display: none`)
+- **THEN** `#sidebar` and `#sidebar-resizer` are hidden
+- **THEN** a ▶ button appears in the top-left of `#main`
 - **THEN** the state is saved to localStorage
 
 #### Scenario: User shows the sidebar
-- **WHEN** user clicks the ☰ toggle button while the sidebar is hidden
+- **WHEN** user clicks the ▶ button while the sidebar is hidden
 - **THEN** `body.sidebar-hidden` class is removed
 - **THEN** `#sidebar` and `#sidebar-resizer` become visible
+- **THEN** the ▶ button is hidden
 - **THEN** the state is saved to localStorage
 
 #### Scenario: State persisted across sessions
 - **WHEN** the user reopens the Reader
 - **THEN** the sidebar visibility is restored from localStorage
+
+### Requirement: Manual refresh button
+A ↻ button SHALL be displayed at a fixed position (bottom-right of `#main`, next to the ⇔ width toggle). Clicking it re-renders the active tab's content by re-reading the file from disk.
+
+#### Scenario: User clicks refresh
+- **WHEN** user clicks the ↻ button while a tab is active
+- **THEN** the file content is re-read from disk and re-rendered
+
+#### Scenario: No active tab
+- **WHEN** user clicks the ↻ button with no tab open
+- **THEN** nothing happens
 
 ### Requirement: Chat panel is resizable in height
 The chat panel SHALL include a `.chat-resizer` drag bar at its top edge. Users SHALL be able to drag the resizer to adjust the messages area height between 80px and 600px. The height SHALL be persisted in localStorage.

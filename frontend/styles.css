@@ -183,6 +183,24 @@ body.sidebar-hidden #sidebar-resizer {
 #sidebar-show:hover { background: var(--hover); color: var(--text-primary); }
 body.sidebar-hidden #sidebar-show { display: block; }
 
+/* Refresh button */
+#refresh-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 56px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  z-index: 160;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+#refresh-btn:hover { opacity: 1; }
+
 /* Width toggle button */
 #width-toggle {
   position: absolute;

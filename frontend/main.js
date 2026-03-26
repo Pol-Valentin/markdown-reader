@@ -165,6 +165,12 @@ document.addEventListener('mouseup', () => {
 const savedWidth = localStorage.getItem('sidebarWidth');
 if (savedWidth) sidebarEl.style.width = savedWidth;
 
+// --- Refresh button ---
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  const tab = getActiveTab();
+  if (tab) await renderContent(tab);
+});
+
 // --- Sidebar toggle ---
 const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebarShow = document.getElementById('sidebar-show');
