@@ -67,12 +67,16 @@ The channel SHALL expose an MCP tool `open_file` with a required `path` paramete
 - **THEN** the tool returns a success result
 
 ### Requirement: Channel provides reply tool
-The channel SHALL expose an MCP tool `reply` with required parameters `session_id` (string) and `text` (string, supports markdown). When called, the channel SHALL send `reply:{session_id}:{json}\n` over the Unix socket.
+The channel SHALL expose an MCP tool `reply` with required parameters `session_id` (string) and `message` (string, supports markdown). When called, the channel SHALL validate that both parameters are present and send `reply:{session_id}:{json}\n` over the Unix socket. If either parameter is missing, the tool SHALL throw an error.
 
 #### Scenario: Claude replies to a comment
-- **WHEN** Claude calls `reply` with session_id and text
+- **WHEN** Claude calls `reply` with session_id and message
 - **THEN** the channel sends `reply:{session_id}:{"text":"..."}\n` to the Reader
 - **THEN** the tool returns a success result
+
+#### Scenario: Missing parameters
+- **WHEN** Claude calls `reply` without session_id or without message
+- **THEN** the tool throws an error "reply requires session_id and message parameters"
 
 ### Requirement: Channel forwards comments as notifications
 The channel SHALL listen for `comment:{json}\n` messages on the persistent socket connection. When received, it SHALL emit a `notifications/claude/channel` event with the comment content and metadata.
