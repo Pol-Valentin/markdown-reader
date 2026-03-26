@@ -1,0 +1,13 @@
+node_modules/
+src-tauri/target/
+src/bundle.js
+src/bundle.js.map
+src/styles.css
+.superpowers/
+.claude/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/Square*.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/icon.icns
+src-tauri/icons/icon.ico

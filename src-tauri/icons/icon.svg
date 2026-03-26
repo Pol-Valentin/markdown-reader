@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6c5ce7"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background with gradient -->
+  <rect width="256" height="256" rx="52" ry="52" fill="url(#bg)"/>
+
+  <!-- Subtle border -->
+  <rect x="1" y="1" width="254" height="254" rx="51" ry="51" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+
+  <!-- Markdown "M" mark + down arrow -->
+  <g transform="translate(32, 72)" fill="none" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="0,112 0,0 48,56 96,0 96,112"/>
+    <line x1="160" y1="10" x2="160" y2="100"/>
+    <polyline points="132,72 160,100 188,72"/>
+  </g>
+</svg>

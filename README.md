@@ -1,0 +1,124 @@
+# Markdown Reader
+
+A lightweight, fast Markdown reader for Linux (GNOME/Wayland) built with Tauri v2.
+
+![Markdown Reader icon](src-tauri/icons/icon.svg)
+
+## Features
+
+- **Full Markdown rendering** — GFM tables, task lists, strikethrough, autolinks
+- **Mermaid diagrams** — rendered inline, lazy-loaded for performance
+- **Syntax highlighting** — all languages via highlight.js
+- **LaTeX math** — inline `$...$` and block `$$...$$` via KaTeX
+- **Table of contents** — auto-generated from headings
+- **Front matter** — YAML front matter hidden by default
+- **Live reload** — file changes on disk are reflected instantly
+- **Dark/light theme** — follows your system GTK theme automatically
+- **Sidebar with 3 views** — Pinned, Recent, and Folder tree
+- **Tabs** — open multiple files, click or middle-click to close
+- **Pin files** — right-click to pin frequently used files
+- **Multi-instance per workspace** — each GNOME workspace gets its own window, shared history
+- **CLI-first** — `markdown-reader file.md` opens or reuses an existing instance
+- **Detached from terminal** — launches in background, survives terminal close
+- **Tiny** — ~14 MB binary, ~5 MB .deb
+
+## Install
+
+### Prerequisites
+
+- Linux with GNOME/Wayland
+- Rust toolchain (via [rustup](https://rustup.rs/))
+- System dependencies:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/Pol-Valentin/markdown-reader.git
+cd markdown-reader
+npm install
+npm run build
+export PATH="$HOME/.cargo/bin:$PATH"
+npx tauri build
+```
+
+The binary is at `src-tauri/target/release/markdown-reader`.
+
+### Install the .desktop file (optional)
+
+To get the app icon in GNOME dock and app launcher:
+
+```bash
+# Copy binary somewhere in PATH
+sudo cp src-tauri/target/release/markdown-reader /usr/local/bin/
+
+# Install icon
+mkdir -p ~/.local/share/icons/hicolor/128x128/apps
+cp src-tauri/icons/128x128.png ~/.local/share/icons/hicolor/128x128/apps/markdown-reader.png
+gtk-update-icon-cache -f ~/.local/share/icons/hicolor/
+
+# Install .desktop file
+cat > ~/.local/share/applications/markdown-reader.desktop << 'EOF'
+[Desktop Entry]
+Name=Markdown Reader
+Comment=Lightweight Markdown reader with Mermaid support
+Exec=markdown-reader %f
+Icon=markdown-reader
+Terminal=false
+Type=Application
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+StartupWMClass=markdown-reader
+EOF
+update-desktop-database ~/.local/share/applications/
+```
+
+## Usage
+
+```bash
+# Open a file
+markdown-reader README.md
+
+# Open without a file (browse history)
+markdown-reader
+
+# Open another file in the same instance (same workspace)
+markdown-reader docs/spec.md
+```
+
+### Sidebar
+
+- **📌 Pinned** — right-click any file → "Épingler" to pin it
+- **🕐 Recent** — sorted by last opened
+- **📂 By folder** — recursive tree, collapsible
+
+### Keyboard / mouse
+
+- **Click** a sidebar file to open in a new tab
+- **Right-click** a file to pin/unpin
+- **Middle-click** a tab to close it
+- **⇔ button** (bottom-right) toggles between centered and full-width layout
+- **Drag** the sidebar edge to resize
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Framework | [Tauri v2](https://v2.tauri.app/) |
+| Backend | Rust |
+| Frontend | Vanilla HTML/CSS/JS |
+| Markdown | [marked.js](https://marked.js.org/) |
+| Diagrams | [Mermaid](https://mermaid.js.org/) |
+| Code highlighting | [highlight.js](https://highlightjs.org/) |
+| Math | [KaTeX](https://katex.org/) |
+| Bundler | [esbuild](https://esbuild.github.io/) |
+| File watching | [notify](https://docs.rs/notify/) |
+| IPC | Unix sockets |
+| Workspace detection | D-Bus (GNOME Mutter) |
+
+## License
+
+[MIT](LICENSE)
