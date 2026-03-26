@@ -113,3 +113,12 @@ pub async fn get_sessions(state: State<'_, AppState>) -> Result<Vec<ipc::Session
     let registry = state.session_registry.lock().await;
     Ok(registry.values().cloned().collect())
 }
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("Failed to open URL: {e}"))?;
+    Ok(())
+}

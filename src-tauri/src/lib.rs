@@ -84,6 +84,7 @@ pub fn run_with_args(args: Vec<String>) {
             commands::unwatch_file,
             commands::send_comment,
             commands::get_sessions,
+            commands::open_url,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

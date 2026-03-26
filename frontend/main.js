@@ -226,6 +226,17 @@ document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
 });
 
+// --- Open external links in system browser ---
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href]');
+  if (!link) return;
+  const href = link.getAttribute('href');
+  if (href && /^https?:\/\//.test(href)) {
+    e.preventDefault();
+    invoke('open_url', { url: href }).catch(() => {});
+  }
+});
+
 // --- Init ---
 
 async function init() {
