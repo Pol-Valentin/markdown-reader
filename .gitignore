@@ -4,7 +4,7 @@ src/bundle.js
 src/bundle.js.map
 src/styles.css
 .superpowers/
-.claude/
+.claude/settings.local.json
 src-tauri/icons/android/
 src-tauri/icons/ios/
 src-tauri/icons/Square*.png
