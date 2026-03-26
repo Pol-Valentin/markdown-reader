@@ -116,9 +116,9 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object' as const,
         properties: {
           session_id: { type: 'string', description: 'The session_id from the channel tag' },
-          text: { type: 'string', description: 'The reply message (supports markdown)' },
+          message: { type: 'string', description: 'The reply message (supports markdown)' },
         },
-        required: ['session_id', 'text'],
+        required: ['session_id', 'message'],
       },
     },
   ],
@@ -134,8 +134,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 
   if (req.params.name === 'reply') {
-    const { session_id, text } = args
-    const json = JSON.stringify({ text })
+    const { session_id, text, message } = args as any
+    const replyText = text || message || ''
+    const json = JSON.stringify({ text: replyText })
     await sendToSocket(`reply:${session_id}:${json}\n`)
     return { content: [{ type: 'text', text: 'Reply sent' }] }
   }
