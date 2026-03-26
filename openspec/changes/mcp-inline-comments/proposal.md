@@ -7,7 +7,7 @@ When Claude Code generates plans, designs, or specs and opens them in the Markdo
 - Add a **two-way Claude Code Channel** (MCP) so the Reader can push comments to Claude and receive replies
 - Add a **TypeScript channel bridge** (`markdown-reader --mcp` mode) using the MCP SDK, communicating with the GUI via the existing Unix socket IPC
 - Add an **inline comment UI** in the frontend: text selection → 💬 button → comment form, plus click-to-comment on Mermaid/code blocks
-- Add a **chat panel** at the bottom of the document to display the conversation (user comments + Claude replies)
+- Add a **chat panel** at the bottom of the document to display the conversation (user comments + Claude replies), with a **session selector dropdown** to connect any tab to any active Claude Code session
 - Add a **sidebar toggle** (◀ in sidebar header, ▶ to reopen) to hide/show the sidebar, with state persisted in localStorage
 - Add a **refresh button** (↻) to manually re-render the active document
 - Extend the **IPC protocol** with persistent subscriber connections, session-based routing, and reply forwarding

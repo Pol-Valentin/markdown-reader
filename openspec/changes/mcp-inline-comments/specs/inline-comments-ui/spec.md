@@ -31,14 +31,18 @@ When the user clicks on a Mermaid diagram or a syntax-highlighted code block on 
 - **THEN** the highlight and 💬 button disappear
 
 ### Requirement: Comment form opens on button click
-When the user clicks the 💬 button, a comment form SHALL appear with a single `<input type="text">`. The form uses `position: fixed` and is appended to `document.body`. Pressing Enter sends the comment. There is no submit button.
+When the user clicks the 💬 button, a comment form SHALL appear with a single `<input type="text">` and a submit button (➤). The form uses `position: fixed` and is appended to `document.body`. Pressing Enter or clicking the submit button sends the comment.
 
 #### Scenario: User opens comment form
 - **WHEN** user clicks the 💬 button
-- **THEN** a form appears with a single text input positioned below the selection or block using viewport coordinates
+- **THEN** a form appears with a text input and a ➤ submit button, positioned below the selection or block using viewport coordinates
 
 #### Scenario: User submits via Enter
 - **WHEN** user types a comment and presses Enter
+- **THEN** the comment is submitted
+
+#### Scenario: User submits via button
+- **WHEN** user types a comment and clicks the ➤ button
 - **THEN** the comment is submitted
 
 #### Scenario: User dismisses form
@@ -80,15 +84,15 @@ The Markdown renderer SHALL store the original source code in a `data-source` at
 - **WHEN** a code block is syntax-highlighted
 - **THEN** the `pre` element has a `data-source` attribute containing the original code
 
-### Requirement: Chat panel displays conversation
-A collapsible chat panel SHALL appear at the bottom of `#main` (not inside `#content-scroll`) on commentable tabs, displaying user comments and Claude replies as a conversation thread. The panel SHALL be hidden by default (`display: none`) and only shown when a commentable tab is active. The panel SHALL include a direct input area at the bottom (textarea + "Envoyer" button) for sending messages without text selection.
+### Requirement: Chat panel displays conversation on all tabs
+A collapsible chat panel SHALL appear at the bottom of `#main` (not inside `#content-scroll`) on ALL tabs, displaying user comments and Claude replies as a conversation thread. The panel header SHALL include a session selector dropdown (`<select class="session-select">`) that lists active sessions. The panel SHALL include a direct input area at the bottom for sending messages.
 
 #### Scenario: User sends a comment
 - **WHEN** a comment is submitted
 - **THEN** it appears in the chat panel as a user message (right-aligned) with the heading context and timestamp
 
 #### Scenario: Claude replies
-- **WHEN** a `claude-reply` Tauri event is received for the active tab's session
+- **WHEN** a `claude-reply` Tauri event is received for the selected session
 - **THEN** the reply appears in the chat panel as a Claude message (left-aligned) with markdown rendering
 
 #### Scenario: Panel is collapsible
@@ -99,23 +103,49 @@ A collapsible chat panel SHALL appear at the bottom of `#main` (not inside `#con
 - **WHEN** a Claude reply arrives while the panel is collapsed
 - **THEN** a badge/indicator shows the number of unread replies
 
-#### Scenario: Non-commentable tab
-- **WHEN** user views a tab without a session ID
-- **THEN** no chat panel is visible
+#### Scenario: Chat panel visible on all tabs
+- **WHEN** user views any tab (with or without a session ID)
+- **THEN** the chat panel is visible with the session selector
 
 #### Scenario: Chat panel hidden on initial render
 - **WHEN** the chat panel is first created via `ensureChatPanel()`
 - **THEN** it has `display: none` and is not visible
-- **THEN** it becomes visible only when a commentable tab is activated
+- **THEN** it becomes visible when any tab is activated
+
+### Requirement: Session selector in chat panel header
+The chat panel header SHALL include a `<select class="session-select">` dropdown listing all active sessions. Each option SHALL display `{cwd} ({session_id_short}) — il y a X min` where `session_id_short` is the first 8 characters of the session ID and `X min` is the time since the session connected. Users can connect any tab to any active session from the Reader.
+
+#### Scenario: Multiple sessions available
+- **WHEN** two Claude Code sessions are connected to the Reader
+- **THEN** the dropdown lists both sessions with their cwd and relative time
+
+#### Scenario: User selects a session
+- **WHEN** user selects a session from the dropdown
+- **THEN** the chat panel displays the conversation for that session
+- **THEN** the chat input becomes enabled
+
+#### Scenario: No sessions available
+- **WHEN** no Claude Code sessions are connected
+- **THEN** the dropdown is empty or shows a placeholder
+- **THEN** the chat input is disabled
 
 ### Requirement: Chat panel has direct input area
-The chat panel SHALL include an input area at the bottom with a single `<input type="text">`, allowing users to send messages directly without selecting text. Pressing Enter sends the message. There is no send button.
+The chat panel SHALL include an input area at the bottom with a single `<input type="text">` and a submit button (➤), allowing users to send messages directly without selecting text. Pressing Enter or clicking the submit button sends the message. The input SHALL be disabled when no session is selected in the session selector.
 
 #### Scenario: User sends a message from chat input
-- **WHEN** user types a message in the chat input and presses Enter
+- **WHEN** user types a message in the chat input and presses Enter (or clicks ➤)
 - **THEN** the message is sent as a comment with empty `heading` and `selected_text` fields
 - **THEN** the message appears in the chat panel as a user message
 - **THEN** the input is cleared
+
+#### Scenario: Chat input disabled without session
+- **WHEN** no session is selected in the session selector dropdown
+- **THEN** the chat input and submit button are disabled
+- **THEN** the user cannot type or send messages
+
+#### Scenario: Chat input enabled with session
+- **WHEN** a session is selected in the session selector dropdown
+- **THEN** the chat input and submit button are enabled
 
 ### Requirement: Sidebar can be hidden and shown
 A ◀ toggle button SHALL be displayed in the sidebar header. Clicking it hides the sidebar by adding `body.sidebar-hidden` class, which hides `#sidebar` and `#sidebar-resizer` with `display: none`. When hidden, a ▶ button SHALL appear in the top-left of `#main` to reopen the sidebar. The visibility state SHALL be persisted in localStorage.

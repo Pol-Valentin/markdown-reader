@@ -69,17 +69,17 @@ Currently, when Claude Code opens a Markdown file in the Reader, it shells out v
 
 **Rationale:** A socket file can remain on disk after the Reader crashes (orphaned socket). `existsSync` would return true even though no process is listening. A proper ping/pong handshake confirms the Reader is actually responsive. If the ping fails, the channel cleans up the orphaned socket and launches a fresh Reader instance, waiting up to 5 seconds for it to become responsive.
 
-### 7. Lazy reconnect on next open_file (no auto-relaunch)
+### 7. Eager connect at startup + reconnect without relaunch
 
-**Decision:** When the Reader closes, the channel simply sets `socketReady=false` and `socket=null`. There is no reconnect attempt. The next `open_file` call triggers `sendToSocket()`, which auto-connects via `connectAndSubscribe()` (including `ensureReaderRunning` if needed).
+**Decision:** The channel calls `tryReconnectWithoutRelaunch()` at startup and on socket close. This function polls for the Reader's socket every 5 seconds indefinitely, without launching a new Reader instance and without a maximum attempt limit. If the Reader is already running at startup, the channel connects immediately.
 
-**Rationale:** The Reader may be closed intentionally by the user. Auto-relaunching on every socket close would be intrusive. A lazy approach — reconnecting only when Claude actually needs to open a file — respects the user's intent and avoids zombie Reader instances. The `sendToSocket()` function handles auto-connection transparently.
+**Rationale:** Eager connect at startup means comments can flow as soon as the Reader is available, without waiting for an `open_file` call. On socket close, the channel reconnects automatically when the Reader comes back, but never relaunches it — respecting the user's intent if they closed the Reader. The indefinite polling is acceptable because the channel is a long-lived process tied to the Claude Code session.
 
-### 8. Chat panel hidden by default, resizable, with direct input
+### 8. Chat panel visible on all tabs with session selector
 
-**Decision:** The chat panel starts with `display: none` and only becomes visible when a commentable tab is active. The panel includes a `.chat-resizer` drag bar for height adjustment (80px–600px), persisted in localStorage. The panel also includes an input area at the bottom (textarea + "Envoyer" button) for sending messages directly without text selection. The panel is appended to `#main` (not inside `#content-scroll`) to avoid scroll interference.
+**Decision:** The chat panel is visible on ALL tabs (not just commentable ones) and includes a session selector dropdown (`<select class="session-select">`) in its header. The dropdown lists active sessions as `{cwd} ({session_id_short}) — il y a X min`. Users can connect any tab to any active session. The chat input is disabled when no session is selected. The panel includes a `.chat-resizer` drag bar for height adjustment (80px–600px), persisted in localStorage. The comment form and chat input both include a submit button (➤) alongside Enter-to-send. The panel is appended to `#main` (not inside `#content-scroll`) to avoid scroll interference.
 
-**Rationale:** Showing an empty chat panel on non-commentable tabs (manual opens, sidebar) is confusing. Hiding by default and showing only when relevant keeps the UI clean. Resizability lets users allocate screen space to the conversation as needed. The direct input area allows the user to send follow-up messages or free-form feedback without needing to select text first, improving the conversational flow.
+**Rationale:** Making the chat panel visible on all tabs allows users to interact with Claude from any context, not just from tabs opened via MCP. The session selector gives users explicit control over which Claude Code session receives their messages, which is clearer than implicit session-per-tab routing. Disabling input when no session is selected prevents confusion. The submit button improves discoverability — not all users know they can press Enter to send.
 
 ## Risks / Trade-offs
 
@@ -87,4 +87,4 @@ Currently, when Claude Code opens a Markdown file in the Reader, it shells out v
 - **Bun/Node.js runtime dependency** → Users need Bun (or Node) installed to use the comment feature. Mitigation: a JS runtime is already required for building the project. The channel could be bundled as a single file later.
 - **Unix socket protocol is not versioned** → Adding new message types could confuse older Reader versions. Mitigation: unknown messages are already ignored by the current IPC handler.
 - **Session ID lost on Reader restart** → If the Reader restarts, subscriber connections drop and tabs lose their session tags. Mitigation: Claude Code can re-open files via `open_file` to re-establish the session. Acceptable for MVP.
-- **Channel does not auto-reconnect** → If the Reader is closed, the channel does not attempt to reconnect. The next `open_file` call will re-launch and reconnect lazily. This means comments cannot be sent until Claude opens a new file.
+- **Channel polls indefinitely on reconnect** → If the Reader is closed, the channel polls every 5 seconds indefinitely without relaunching. This is a lightweight operation (socket existence check + ping) and acceptable for a long-lived process. The channel reconnects automatically when the Reader becomes available again.
