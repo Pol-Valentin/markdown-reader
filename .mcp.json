@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "markdown-reader": {
+      "command": "bun",
+      "args": ["/home/pol/dev/perso/markdown-reader/channel/markdown-reader-channel.ts"]
+    }
+  }
+}

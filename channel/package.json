@@ -1,0 +1,9 @@
+{
+  "name": "markdown-reader-channel",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "markdown-reader-channel.ts",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}

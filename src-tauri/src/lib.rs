@@ -11,6 +11,7 @@ pub struct AppState {
     pub initial_file: Mutex<Option<String>>,
     pub workspace_id: u32,
     pub file_watcher: Mutex<Option<watcher::FileWatcher>>,
+    pub subscribers: ipc::SubscriberMap,
 }
 
 pub fn run() {
@@ -58,11 +59,14 @@ pub fn run_with_args(args: Vec<String>) {
         }
     }
 
+    let subscribers = ipc::new_subscriber_map();
+
     tauri::Builder::default()
         .manage(AppState {
             initial_file: Mutex::new(file_path),
             workspace_id,
             file_watcher: Mutex::new(None),
+            subscribers: subscribers.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
@@ -75,6 +79,7 @@ pub fn run_with_args(args: Vec<String>) {
             commands::get_initial_file,
             commands::watch_file,
             commands::unwatch_file,
+            commands::send_comment,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -100,6 +105,7 @@ pub fn run_with_args(args: Vec<String>) {
             // Start IPC server for this workspace
             let ipc_server = ipc::IpcServer::new(workspace_id);
             let ipc_handle = handle.clone();
+            let ipc_subscribers = subscribers.clone();
             // We need a tokio runtime for the IPC server
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -107,12 +113,39 @@ pub fn run_with_args(args: Vec<String>) {
                     .build()
                     .unwrap();
                 rt.block_on(async {
-                    if let Ok(mut rx) = ipc_server.start() {
-                        while let Some(path) = rx.recv().await {
-                            let _ = ipc_handle.emit("open-file", path);
-                            // Focus the window
-                            if let Some(window) = ipc_handle.webview_windows().values().next() {
-                                let _ = window.set_focus();
+                    if let Ok(mut rx) = ipc_server.start(ipc_subscribers) {
+                        while let Some(msg) = rx.recv().await {
+                            match msg {
+                                ipc::IpcMessage::OpenFile(path) => {
+                                    let _ = ipc_handle.emit("open-file", path);
+                                    if let Some(window) = ipc_handle.webview_windows().values().next() {
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                                ipc::IpcMessage::OpenFileWithSession { session_id, path } => {
+                                    #[derive(serde::Serialize, Clone)]
+                                    struct OpenFilePayload {
+                                        path: String,
+                                        session_id: String,
+                                    }
+                                    let _ = ipc_handle.emit("open-file-session", OpenFilePayload { path, session_id });
+                                    if let Some(window) = ipc_handle.webview_windows().values().next() {
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                                ipc::IpcMessage::ClaudeReply { session_id, json } => {
+                                    #[derive(serde::Serialize, Clone)]
+                                    struct ReplyPayload {
+                                        session_id: String,
+                                        text: String,
+                                    }
+                                    // Parse json to extract text, or use raw json as text
+                                    let text = serde_json::from_str::<serde_json::Value>(&json)
+                                        .ok()
+                                        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(String::from))
+                                        .unwrap_or(json);
+                                    let _ = ipc_handle.emit("claude-reply", ReplyPayload { session_id, text });
+                                }
                             }
                         }
                     }

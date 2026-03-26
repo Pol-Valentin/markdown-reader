@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { renderMarkdown, renderMermaidDiagrams, generateTOC } from './renderer.js';
 import { openTab, closeTab, getActiveTab, getTabs, setOnTabChange, renderTabBar } from './tabs.js';
 import { renderSidebar, setCallbacks as setSidebarCallbacks } from './sidebar.js';
+import { initComments, ensureChatPanel, appendClaudeReply, updateChatVisibility } from './comments.js';
 
 // DOM elements
 const sidebarEl = document.getElementById('sidebar');
@@ -87,6 +88,7 @@ setOnTabChange(async (activeTab, closedPath) => {
   refreshTabBar();
   await renderContent(activeTab);
   refreshSidebar();
+  updateChatVisibility();
 });
 
 // --- Sidebar callbacks ---
@@ -110,6 +112,11 @@ listen('open-file', async (event) => {
   openTab(path);
 });
 
+listen('open-file-session', async (event) => {
+  const { path, session_id } = event.payload;
+  openTab(path, session_id);
+});
+
 listen('file-changed', async (event) => {
   const changedPath = event.payload;
   const activeTab = getActiveTab();
@@ -120,6 +127,11 @@ listen('file-changed', async (event) => {
 
 listen('history-changed', async () => {
   await refreshSidebar();
+});
+
+listen('claude-reply', async (event) => {
+  const { session_id, text } = event.payload;
+  appendClaudeReply(session_id, text);
 });
 
 // --- Sidebar resize ---
@@ -176,6 +188,10 @@ document.addEventListener('contextmenu', (e) => {
 async function init() {
   await refreshSidebar();
   refreshTabBar();
+
+  // Initialize comment system
+  initComments(contentEl, getActiveTab);
+  ensureChatPanel(document.getElementById('content-scroll'));
 
   // Open initial file if passed via CLI
   try {

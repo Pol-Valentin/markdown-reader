@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 const PING_MSG: &str = "__ping__";
 const PONG_MSG: &str = "__pong__";
@@ -10,6 +12,34 @@ pub fn socket_path(workspace_id: u32) -> PathBuf {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
         .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
     PathBuf::from(runtime_dir).join(format!("md-reader-ws-{workspace_id}.sock"))
+}
+
+/// Messages sent from IPC to the app
+pub enum IpcMessage {
+    /// Plain file open (legacy CLI): just a path, no session
+    OpenFile(String),
+    /// Session-tagged file open: open:{session_id}:{path}
+    OpenFileWithSession { session_id: String, path: String },
+    /// Reply from Claude via channel: reply:{session_id}:{json}
+    ClaudeReply { session_id: String, json: String },
+}
+
+/// Shared subscriber map: session_id → write half of the socket
+pub type SubscriberMap = Arc<Mutex<HashMap<String, tokio::net::unix::OwnedWriteHalf>>>;
+
+pub fn new_subscriber_map() -> SubscriberMap {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Send a comment to a specific subscriber by session_id.
+pub async fn send_to_subscriber(subscribers: &SubscriberMap, session_id: &str, message: &str) {
+    let mut map = subscribers.lock().await;
+    if let Some(writer) = map.get_mut(session_id) {
+        if writer.write_all(message.as_bytes()).await.is_err() {
+            // Broken pipe — remove subscriber
+            map.remove(session_id);
+        }
+    }
 }
 
 pub struct IpcServer {
@@ -21,8 +51,11 @@ impl IpcServer {
         Self { workspace_id }
     }
 
-    /// Start listening on the socket. Returns a receiver for incoming file paths.
-    pub fn start(&self) -> Result<mpsc::UnboundedReceiver<String>, String> {
+    /// Start listening on the socket. Returns a receiver for incoming messages.
+    pub fn start(
+        &self,
+        subscribers: SubscriberMap,
+    ) -> Result<mpsc::UnboundedReceiver<IpcMessage>, String> {
         let path = socket_path(self.workspace_id);
 
         // Clean up stale socket
@@ -38,19 +71,12 @@ impl IpcServer {
         tokio::spawn(async move {
             loop {
                 match listener.accept().await {
-                    Ok((mut stream, _)) => {
+                    Ok((stream, _)) => {
                         let tx = tx.clone();
-                        tokio::spawn(async move {
-                            let mut buf = vec![0u8; 4096];
-                            if let Ok(n) = AsyncReadExt::read(&mut stream, &mut buf).await {
-                                let msg = String::from_utf8_lossy(&buf[..n]).to_string();
-                                if msg == PING_MSG {
-                                    let _ = stream.write_all(PONG_MSG.as_bytes()).await;
-                                } else if !msg.is_empty() {
-                                    let _ = tx.send(msg);
-                                }
-                            }
-                        });
+                        let subscribers = subscribers.clone();
+                        tokio::spawn(
+                            handle_connection(stream, tx, subscribers),
+                        );
                     }
                     Err(_) => break,
                 }
@@ -59,6 +85,97 @@ impl IpcServer {
 
         Ok(rx)
     }
+}
+
+async fn handle_connection(
+    mut stream: UnixStream,
+    tx: mpsc::UnboundedSender<IpcMessage>,
+    subscribers: SubscriberMap,
+) {
+    // Read initial data — support both newline-terminated (new protocol)
+    // and raw bytes (legacy CLI / ping)
+    let mut buf = vec![0u8; 4096];
+    let n = match AsyncReadExt::read(&mut stream, &mut buf).await {
+        Ok(n) if n > 0 => n,
+        _ => return,
+    };
+
+    let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+    let msg = raw.trim_end_matches('\n');
+
+    // Ping — legacy, no newline
+    if msg == PING_MSG {
+        let _ = stream.write_all(PONG_MSG.as_bytes()).await;
+        return;
+    }
+
+    // Subscribe — persistent connection
+    if let Some(session_id) = msg.strip_prefix("subscribe:") {
+        let session_id = session_id.to_string();
+        let (read_half, write_half) = stream.into_split();
+        {
+            let mut map = subscribers.lock().await;
+            map.insert(session_id.clone(), write_half);
+        }
+        // Keep reading for incoming messages (reply, etc.)
+        let mut reader = BufReader::new(read_half);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line).await {
+                Ok(0) | Err(_) => {
+                    // Connection closed — remove subscriber
+                    let mut map = subscribers.lock().await;
+                    map.remove(&session_id);
+                    break;
+                }
+                Ok(_) => {
+                    let msg = line.trim_end_matches('\n');
+                    if let Some(rest) = msg.strip_prefix("reply:") {
+                        if let Some((sid, json)) = rest.split_once(':') {
+                            let _ = tx.send(IpcMessage::ClaudeReply {
+                                session_id: sid.to_string(),
+                                json: json.to_string(),
+                            });
+                        }
+                    } else if let Some(rest) = msg.strip_prefix("open:") {
+                        if let Some((sid, path)) = rest.split_once(':') {
+                            let _ = tx.send(IpcMessage::OpenFileWithSession {
+                                session_id: sid.to_string(),
+                                path: path.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // Open with session tag
+    if let Some(rest) = msg.strip_prefix("open:") {
+        if let Some((session_id, path)) = rest.split_once(':') {
+            let _ = tx.send(IpcMessage::OpenFileWithSession {
+                session_id: session_id.to_string(),
+                path: path.to_string(),
+            });
+        }
+        return;
+    }
+
+    // Reply from subscriber (non-persistent path, rare)
+    if let Some(rest) = msg.strip_prefix("reply:") {
+        if let Some((session_id, json)) = rest.split_once(':') {
+            let _ = tx.send(IpcMessage::ClaudeReply {
+                session_id: session_id.to_string(),
+                json: json.to_string(),
+            });
+        }
+        return;
+    }
+
+    // Legacy: plain file path
+    let _ = tx.send(IpcMessage::OpenFile(msg.to_string()));
 }
 
 pub struct IpcClient;
@@ -126,5 +243,37 @@ mod tests {
     fn test_socket_path() {
         let path = socket_path(2);
         assert!(path.to_string_lossy().contains("md-reader-ws-2.sock"));
+    }
+
+    #[test]
+    fn test_parse_subscribe_prefix() {
+        let msg = "subscribe:abc-123";
+        assert_eq!(msg.strip_prefix("subscribe:"), Some("abc-123"));
+    }
+
+    #[test]
+    fn test_parse_open_prefix() {
+        let msg = "open:session1:/home/user/file.md";
+        let rest = msg.strip_prefix("open:").unwrap();
+        let (session_id, path) = rest.split_once(':').unwrap();
+        assert_eq!(session_id, "session1");
+        assert_eq!(path, "/home/user/file.md");
+    }
+
+    #[test]
+    fn test_parse_reply_prefix() {
+        let msg = "reply:session1:{\"text\":\"done\"}";
+        let rest = msg.strip_prefix("reply:").unwrap();
+        let (session_id, json) = rest.split_once(':').unwrap();
+        assert_eq!(session_id, "session1");
+        assert_eq!(json, "{\"text\":\"done\"}");
+    }
+
+    #[test]
+    fn test_parse_plain_path() {
+        let msg = "/home/user/file.md";
+        assert!(msg.strip_prefix("subscribe:").is_none());
+        assert!(msg.strip_prefix("open:").is_none());
+        assert!(msg.strip_prefix("reply:").is_none());
     }
 }

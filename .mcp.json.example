@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "markdown-reader": {
+      "command": "bun",
+      "args": ["./channel/markdown-reader-channel.ts"]
+    }
+  }
+}

@@ -170,6 +170,12 @@ tools: [{
 
 The tool handler sends `reply:{session_id}:{json}\n` over the Unix socket. The Reader displays the reply in the chat panel of the tab associated with that session.
 
+**Ensuring the Reader is running (`ensureReaderRunning`):**
+Before subscribing, the channel checks if the Reader GUI is already responsive by using a `pingSocket()` function: it connects to the socket, sends `__ping__`, and expects `__pong__` back. This is more robust than checking `existsSync(socketPath)` because it handles orphaned sockets (Reader crashed but socket file remains). If the ping fails, the channel cleans up the orphaned socket, launches a new Reader instance, and waits up to 5 seconds for it to become responsive (polling with `pingSocket()`).
+
+**Reconnection with auto-relaunch:**
+If the persistent subscriber connection drops (`socket.on('close')`), the channel attempts to reconnect. Each reconnect attempt calls `ensureReaderRunning` first, so the Reader is relaunched if it has exited. The reconnect logic is wrapped in try/catch to handle transient errors gracefully.
+
 **Workspace detection:**
 The channel needs to find the right socket. It reuses the same D-Bus call as the Rust code (`org.gnome.Shell.Eval` → `global.workspace_manager.get_active_workspace_index()`), falling back to workspace 0. Alternatively, the workspace number could be passed as an arg: `markdown-reader --mcp --workspace 0`.
 
@@ -182,6 +188,7 @@ The channel needs to find the right socket. It reuses the same D-Bus call as the
 **New additions:**
 - **Persistent connections with session ID:** A new message `subscribe:{session_id}\n` from a client tells the server to keep the connection open and register it as a subscriber with that session ID. The server maintains a map of `session_id → stream`.
 - **Session-tagged file opening:** A new message `open:{session_id}:{path}\n` opens the file and tags the tab with the session ID.
+- **Subscriber read loop handles both `open:` and `reply:` messages:** The persistent subscriber connection read loop processes incoming messages from the channel. Since the channel sends both `open:` and `reply:` messages on the same persistent connection (after the initial `subscribe:`), the read loop must dispatch both message types — not just `reply:`.
 - **Targeted comment routing:** When the GUI receives a comment via `send_comment`, it looks up the tab's session ID and writes `comment:{json}\n` **only** to the matching subscriber stream.
 - **Subscriber cleanup:** When a subscriber disconnects (broken pipe), it is removed from the map. Tabs tagged with that session ID lose their "commentable" status.
 - **Protocol summary:**
@@ -198,13 +205,14 @@ The channel needs to find the right socket. It reuses the same D-Bus call as the
 ### 3. Frontend — Chat Panel & Comments UI — `frontend/comments.js`
 
 **Chat panel (bottom of document):**
-- A collapsible panel anchored at the bottom of `#content-scroll`, visible only on commentable tabs
+- A collapsible panel anchored at the bottom of `#content-scroll`, **hidden by default** (`display: none`). The panel only shows when a commentable tab is active.
 - Displays the conversation thread: user comments (aligned right) and Claude replies (aligned left)
 - Each message shows a timestamp and the context (heading/selection) for user comments
 - Claude replies support markdown rendering (inline, simple — bold, code, links)
 - Panel auto-scrolls to the latest message
 - A small badge/indicator shows unread replies if the panel is collapsed
 - Panel state (open/collapsed) persisted in localStorage per tab
+- **Resizable in height:** A `.chat-resizer` drag bar at the top of the chat panel allows users to drag and resize the messages area (min 80px, max 600px). The height is persisted in localStorage.
 
 **Text selection commenting:**
 - Listen to `mouseup` on `#content`

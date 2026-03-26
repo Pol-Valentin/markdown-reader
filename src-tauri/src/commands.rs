@@ -1,5 +1,7 @@
 use crate::history::History;
+use crate::ipc;
 use crate::AppState;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::State;
@@ -86,4 +88,22 @@ pub fn unwatch_file(path: String, state: State<'_, AppState>) -> Result<(), Stri
     } else {
         Err("File watcher not initialized".into())
     }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Comment {
+    pub file: String,
+    pub session_id: String,
+    pub heading: String,
+    pub selected_text: String,
+    pub content_type: String,
+    pub comment: String,
+}
+
+#[tauri::command]
+pub async fn send_comment(state: State<'_, AppState>, comment: Comment) -> Result<(), String> {
+    let json = serde_json::to_string(&comment).map_err(|e| e.to_string())?;
+    let message = format!("comment:{json}\n");
+    ipc::send_to_subscriber(&state.subscribers, &comment.session_id, &message).await;
+    Ok(())
 }

@@ -18,16 +18,26 @@ export function getActiveTab() {
   return activeTabIndex >= 0 ? tabs[activeTabIndex] : null;
 }
 
-export function openTab(filePath) {
+export function openTab(filePath, sessionId) {
   // Check if already open
   const existingIndex = tabs.findIndex(t => t.path === filePath);
   if (existingIndex >= 0) {
+    // Update session_id if provided (file reopened via MCP)
+    if (sessionId) {
+      tabs[existingIndex].session_id = sessionId;
+      tabs[existingIndex].commentable = true;
+    }
     activateTab(existingIndex);
     return;
   }
 
   const name = filePath.split('/').pop();
-  tabs.push({ path: filePath, name });
+  const tab = { path: filePath, name };
+  if (sessionId) {
+    tab.session_id = sessionId;
+    tab.commentable = true;
+  }
+  tabs.push(tab);
   activateTab(tabs.length - 1);
 }
 

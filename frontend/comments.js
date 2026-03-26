@@ -1,0 +1,436 @@
+/**
+ * Inline comment UI + chat panel module
+ */
+import { invoke } from '@tauri-apps/api/core';
+
+let contentEl = null;
+let getActiveTabFn = null;
+let commentBtn = null;
+let commentForm = null;
+let highlightedBlock = null;
+let chatPanels = {}; // session_id → messages array
+
+export function initComments(content, getActiveTab) {
+  contentEl = content;
+  getActiveTabFn = getActiveTab;
+
+  // Create floating comment button (reused) — fixed position, viewport coords
+  commentBtn = document.createElement('button');
+  commentBtn.className = 'comment-btn';
+  commentBtn.textContent = '💬';
+  commentBtn.style.display = 'none';
+  document.body.appendChild(commentBtn);
+
+  // Create comment form (reused)
+  commentForm = document.createElement('div');
+  commentForm.className = 'comment-form';
+  commentForm.style.display = 'none';
+  commentForm.innerHTML = `
+    <textarea class="comment-textarea" placeholder="Votre commentaire..." rows="3"></textarea>
+    <div class="comment-form-actions">
+      <button class="comment-submit">Envoyer</button>
+    </div>
+  `;
+  document.body.appendChild(commentForm);
+
+  // Text selection → comment button
+  contentEl.addEventListener('mouseup', onTextSelection);
+
+  // Block click → comment button (delegated)
+  contentEl.addEventListener('click', onBlockClick);
+
+  // Comment button click → open form
+  commentBtn.addEventListener('click', onCommentBtnClick);
+
+  // Submit comment
+  commentForm.querySelector('.comment-submit').addEventListener('click', onSubmitComment);
+
+  // Dismiss on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') dismiss();
+  });
+
+  // Dismiss on click outside
+  document.addEventListener('mousedown', (e) => {
+    if (commentForm.style.display !== 'none' &&
+        !commentForm.contains(e.target) &&
+        !commentBtn.contains(e.target)) {
+      dismiss();
+    }
+  });
+}
+
+// --- Selection state ---
+let currentSelection = null; // { text, type, heading, rect }
+
+function isCommentable() {
+  const tab = getActiveTabFn();
+  return tab && tab.commentable === true;
+}
+
+function onTextSelection() {
+  if (!isCommentable()) return;
+
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.toString().trim() === '') {
+    if (commentForm.style.display === 'none') {
+      commentBtn.style.display = 'none';
+    }
+    return;
+  }
+
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+
+  currentSelection = {
+    text: sel.toString(),
+    type: 'text',
+    heading: findNearestHeading(range.startContainer),
+    rect,
+  };
+
+  showCommentBtn(rect.right + 8, rect.top);
+}
+
+function onBlockClick(e) {
+  if (!isCommentable()) return;
+
+  // Check if clicked on a mermaid or code block
+  const mermaid = e.target.closest('.mermaid');
+  const pre = e.target.closest('pre[data-source]');
+  const block = mermaid || pre;
+
+  if (!block) return;
+
+  // Remove previous highlight
+  clearHighlight();
+
+  block.classList.add('comment-highlight');
+  highlightedBlock = block;
+
+  const source = block.getAttribute('data-source') || block.textContent;
+  const rect = block.getBoundingClientRect();
+
+  currentSelection = {
+    text: source,
+    type: mermaid ? 'mermaid' : 'code',
+    heading: findNearestHeading(block),
+    rect,
+  };
+
+  showCommentBtn(rect.right - 40, rect.top - 8);
+}
+
+function showCommentBtn(x, y) {
+  commentBtn.style.display = 'block';
+  commentBtn.style.left = `${Math.min(x, window.innerWidth - 50)}px`;
+  commentBtn.style.top = `${y}px`;
+  commentForm.style.display = 'none';
+}
+
+function onCommentBtnClick(e) {
+  e.stopPropagation();
+  if (!currentSelection) return;
+
+  const rect = currentSelection.rect;
+  commentForm.style.display = 'block';
+  commentForm.style.left = `${Math.min(rect.left, window.innerWidth - 320)}px`;
+  commentForm.style.top = `${rect.bottom + 8}px`;
+  commentBtn.style.display = 'none';
+
+  const textarea = commentForm.querySelector('.comment-textarea');
+  textarea.value = '';
+  textarea.focus();
+}
+
+async function onSubmitComment() {
+  if (!currentSelection) return;
+  const tab = getActiveTabFn();
+  if (!tab || !tab.commentable) return;
+
+  const textarea = commentForm.querySelector('.comment-textarea');
+  const comment = textarea.value.trim();
+  if (!comment) return;
+
+  const payload = {
+    file: tab.path,
+    session_id: tab.session_id,
+    heading: currentSelection.heading,
+    selected_text: currentSelection.text,
+    content_type: currentSelection.type,
+    comment,
+  };
+
+  try {
+    await invoke('send_comment', { comment: payload });
+    appendUserComment(tab.session_id, payload);
+    dismiss();
+  } catch (err) {
+    console.error('Failed to send comment:', err);
+  }
+}
+
+function dismiss() {
+  commentBtn.style.display = 'none';
+  commentForm.style.display = 'none';
+  clearHighlight();
+  currentSelection = null;
+}
+
+function clearHighlight() {
+  if (highlightedBlock) {
+    highlightedBlock.classList.remove('comment-highlight');
+    highlightedBlock = null;
+  }
+}
+
+// --- Heading resolution ---
+
+function findNearestHeading(node) {
+  let current = node;
+
+  // Walk up and backwards through the DOM to find nearest heading
+  while (current && current !== contentEl) {
+    // Check previous siblings
+    let sibling = current.previousElementSibling || current.previousSibling;
+    while (sibling) {
+      if (sibling.nodeType === 1) {
+        const heading = findHeadingInElement(sibling);
+        if (heading) return heading;
+      }
+      sibling = sibling.previousElementSibling || sibling.previousSibling;
+    }
+    current = current.parentElement;
+  }
+
+  return '';
+}
+
+function findHeadingInElement(el) {
+  if (/^H[1-6]$/.test(el.tagName)) {
+    const level = el.tagName[1];
+    return `${'#'.repeat(parseInt(level))} ${el.textContent}`;
+  }
+  // Check last heading descendant
+  const headings = el.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  if (headings.length > 0) {
+    const last = headings[headings.length - 1];
+    const level = last.tagName[1];
+    return `${'#'.repeat(parseInt(level))} ${last.textContent}`;
+  }
+  return null;
+}
+
+// --- Chat Panel ---
+
+let chatPanelEl = null;
+let chatMessagesEl = null;
+let chatHeaderEl = null;
+let unreadCount = 0;
+let isCollapsed = false;
+
+export function ensureChatPanel(scrollContainer) {
+  if (chatPanelEl) return;
+
+  chatPanelEl = document.createElement('div');
+  chatPanelEl.className = 'chat-panel';
+  chatPanelEl.style.display = 'none'; // Hidden until a commentable tab is active
+  chatPanelEl.innerHTML = `
+    <div class="chat-resizer"></div>
+    <div class="chat-header">
+      <span class="chat-title">💬 Conversation</span>
+      <span class="chat-badge" style="display:none">0</span>
+      <span class="chat-toggle">▼</span>
+    </div>
+    <div class="chat-messages"></div>
+    <div class="chat-input-area">
+      <textarea class="chat-input" placeholder="Répondre..." rows="1"></textarea>
+      <button class="chat-send">Envoyer</button>
+    </div>
+  `;
+  // Fixed position at bottom of #main, not inside scroll container
+  document.getElementById('main').appendChild(chatPanelEl);
+
+  chatHeaderEl = chatPanelEl.querySelector('.chat-header');
+  chatMessagesEl = chatPanelEl.querySelector('.chat-messages');
+
+  const chatInputEl = chatPanelEl.querySelector('.chat-input');
+  const chatSendBtn = chatPanelEl.querySelector('.chat-send');
+
+  // Send message from chat input
+  async function sendChatMessage() {
+    const text = chatInputEl.value.trim();
+    if (!text) return;
+    const tab = getActiveTabFn();
+    if (!tab || !tab.commentable) return;
+
+    const payload = {
+      file: tab.path,
+      session_id: tab.session_id,
+      heading: '',
+      selected_text: '',
+      content_type: 'text',
+      comment: text,
+    };
+
+    try {
+      await invoke('send_comment', { comment: payload });
+      appendUserComment(tab.session_id, payload);
+      chatInputEl.value = '';
+      chatInputEl.style.height = 'auto';
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
+  }
+
+  chatSendBtn.addEventListener('click', sendChatMessage);
+  chatInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  // Auto-grow textarea
+  chatInputEl.addEventListener('input', () => {
+    chatInputEl.style.height = 'auto';
+    chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 100) + 'px';
+  });
+
+  // Collapse/expand toggle
+  chatHeaderEl.addEventListener('click', () => {
+    isCollapsed = !isCollapsed;
+    chatPanelEl.classList.toggle('collapsed', isCollapsed);
+    chatPanelEl.querySelector('.chat-toggle').textContent = isCollapsed ? '▲' : '▼';
+    if (!isCollapsed) {
+      unreadCount = 0;
+      updateBadge();
+    }
+  });
+
+  // Resize drag on top bar
+  const resizer = chatPanelEl.querySelector('.chat-resizer');
+  let startY, startHeight;
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startY = e.clientY;
+    startHeight = chatMessagesEl.offsetHeight;
+    resizer.classList.add('dragging');
+
+    const onMouseMove = (e) => {
+      const delta = startY - e.clientY; // dragging up = bigger
+      const newHeight = Math.max(80, Math.min(600, startHeight + delta));
+      chatMessagesEl.style.maxHeight = `${newHeight}px`;
+    };
+    const onMouseUp = () => {
+      resizer.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      // Save height to localStorage
+      localStorage.setItem('chat-panel-height', chatMessagesEl.style.maxHeight);
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
+  // Restore saved height
+  const savedHeight = localStorage.getItem('chat-panel-height');
+  if (savedHeight) {
+    chatMessagesEl.style.maxHeight = savedHeight;
+  }
+}
+
+function appendUserComment(sessionId, payload) {
+  if (!chatMessagesEl) return;
+
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg chat-msg-user';
+
+  const context = payload.heading ? `<span class="chat-context">${payload.heading}</span>` : '';
+  const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  msg.innerHTML = `
+    ${context}
+    <div class="chat-text">${escapeHtml(payload.comment)}</div>
+    <span class="chat-time">${time}</span>
+  `;
+  chatMessagesEl.appendChild(msg);
+  scrollToBottom();
+  showChatPanel();
+}
+
+export function appendClaudeReply(sessionId, text) {
+  const tab = getActiveTabFn();
+  if (!tab || tab.session_id !== sessionId) return;
+
+  if (!chatMessagesEl) return;
+
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg chat-msg-claude';
+
+  const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  // Basic markdown: bold, code, links
+  const rendered = text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\n/g, '<br>');
+
+  msg.innerHTML = `
+    <div class="chat-text">${rendered}</div>
+    <span class="chat-time">${time}</span>
+  `;
+  chatMessagesEl.appendChild(msg);
+
+  if (isCollapsed) {
+    unreadCount++;
+    updateBadge();
+  }
+  scrollToBottom();
+  showChatPanel();
+}
+
+function showChatPanel() {
+  if (chatPanelEl) {
+    chatPanelEl.style.display = 'block';
+  }
+}
+
+export function hideChatPanel() {
+  if (chatPanelEl) {
+    chatPanelEl.style.display = 'none';
+  }
+}
+
+export function updateChatVisibility() {
+  const tab = getActiveTabFn();
+  if (tab && tab.commentable) {
+    showChatPanel();
+  } else {
+    hideChatPanel();
+  }
+}
+
+function updateBadge() {
+  const badge = chatPanelEl?.querySelector('.chat-badge');
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function scrollToBottom() {
+  if (chatMessagesEl) {
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}

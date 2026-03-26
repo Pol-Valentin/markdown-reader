@@ -20,6 +20,9 @@ A lightweight, fast Markdown reader for Linux (GNOME/Wayland) built with Tauri v
 - **Multi-instance per workspace** — each GNOME workspace gets its own window, shared history
 - **CLI-first** — `markdown-reader file.md` opens or reuses an existing instance
 - **Detached from terminal** — launches in background, survives terminal close
+- **Inline comments → Claude Code** — select text or click a diagram, send feedback directly to your Claude Code session via MCP Channel
+- **Two-way conversation** — Claude replies appear in a chat panel at the bottom of the document
+- **Multi-session routing** — comments are routed to the correct Claude Code session via session IDs
 - **Tiny** — ~14 MB binary, ~5 MB .deb
 
 ## Install
@@ -76,6 +79,40 @@ EOF
 update-desktop-database ~/.local/share/applications/
 ```
 
+## Claude Code Integration
+
+The Markdown Reader can act as a [Claude Code Channel](https://code.claude.com/docs/en/channels-reference), enabling inline comments that are sent directly to your Claude Code session.
+
+### Setup
+
+1. Add to your global Claude Code config (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "markdown-reader": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["/path/to/markdown-reader/channel/markdown-reader-channel.ts"]
+    }
+  }
+}
+```
+
+2. Install channel dependencies:
+
+```bash
+cd channel && bun install
+```
+
+3. Launch Claude Code with the channel flag:
+
+```bash
+claude --dangerously-load-development-channels server:markdown-reader
+```
+
+Claude can now open files with the `open_file` MCP tool. Select text or click a Mermaid/code block, then click 💬 to send a comment. Claude receives it with full context (file, heading, selection) and can reply back in the chat panel.
+
 ## Usage
 
 ```bash
@@ -118,6 +155,7 @@ markdown-reader docs/spec.md
 | File watching | [notify](https://docs.rs/notify/) |
 | IPC | Unix sockets |
 | Workspace detection | D-Bus (GNOME Mutter) |
+| Claude Code bridge | [MCP SDK](https://www.npmjs.com/package/@modelcontextprotocol/sdk) (TypeScript) |
 
 ## License
 

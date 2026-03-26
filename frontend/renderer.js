@@ -15,7 +15,8 @@ const renderer = new marked.Renderer();
 renderer.code = function ({ text, lang }) {
   // Mermaid blocks are handled separately
   if (lang === 'mermaid') {
-    return `<div class="mermaid">${text}</div>`;
+    const escaped = text.replace(/"/g, '&quot;');
+    return `<div class="mermaid" data-source="${escaped}">${text}</div>`;
   }
 
   let highlighted;
@@ -24,7 +25,8 @@ renderer.code = function ({ text, lang }) {
   } else {
     highlighted = hljs.highlightAuto(text).value;
   }
-  return `<pre><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
+  const escapedCode = text.replace(/"/g, '&quot;');
+  return `<pre data-source="${escapedCode}"><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
 };
 
 marked.use({ renderer });
