@@ -56,8 +56,11 @@ export function initComments(content, getActiveTab) {
     if (e.key === 'Escape') dismiss();
   });
 
-  // Paste on selected text → instant comment from clipboard
-  document.addEventListener('paste', async (e) => {
+  // Ctrl+V on selected text → instant comment from clipboard
+  // WebKitGTK doesn't fire paste events without a focused editable element,
+  // so we create a hidden textarea to capture the paste content.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey && e.key === 'v')) return;
     if (!isCommentable()) return;
 
     // Don't intercept if an input/textarea is focused
@@ -66,39 +69,53 @@ export function initComments(content, getActiveTab) {
 
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.toString().trim() === '') return;
-
-    // Check selection is inside content
     if (!contentEl.contains(sel.anchorNode)) return;
 
-    const clipboardText = e.clipboardData?.getData('text/plain');
-    if (!clipboardText || !clipboardText.trim()) return;
-
-    e.preventDefault();
-
-    const tab = getActiveTabFn();
-    if (!tab || !tab.commentable) return;
-
+    // Save selection info before it gets cleared
+    const selectedText = sel.toString();
     const range = sel.getRangeAt(0);
     const heading = findNearestHeading(range.startContainer);
 
-    const payload = {
-      file: tab.path,
-      session_id: tab.session_id,
-      heading,
-      selected_text: sel.toString(),
-      content_type: 'text',
-      comment: clipboardText.trim(),
-    };
+    e.preventDefault();
 
-    try {
-      await invoke('send_comment', { comment: payload });
-      appendUserComment(tab.session_id, payload);
-    } catch (err) {
-      console.error('Failed to send paste comment:', err);
-    }
+    // Create hidden textarea to receive the paste
+    const trap = document.createElement('textarea');
+    trap.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+    document.body.appendChild(trap);
+    trap.focus();
 
-    dismiss();
-    sel.removeAllRanges();
+    // Trigger paste into the trap
+    document.execCommand('paste');
+
+    // Read the pasted content on next tick
+    requestAnimationFrame(async () => {
+      const clipboardText = trap.value.trim();
+      document.body.removeChild(trap);
+
+      if (!clipboardText) return;
+
+      const tab = getActiveTabFn();
+      if (!tab || !tab.commentable) return;
+
+      const payload = {
+        file: tab.path,
+        session_id: tab.session_id,
+        heading,
+        selected_text: selectedText,
+        content_type: 'text',
+        comment: clipboardText,
+      };
+
+      try {
+        await invoke('send_comment', { comment: payload });
+        appendUserComment(tab.session_id, payload);
+      } catch (err) {
+        console.error('Failed to send paste comment:', err);
+      }
+
+      dismiss();
+      window.getSelection()?.removeAllRanges();
+    });
   });
 
   // Dismiss on scroll (button/form positions become stale)
