@@ -56,6 +56,55 @@ export function initComments(content, getActiveTab) {
     if (e.key === 'Escape') dismiss();
   });
 
+  // Ctrl+V on selected text → instant comment from clipboard
+  document.addEventListener('keydown', async (e) => {
+    if (!(e.ctrlKey && e.key === 'v')) return;
+    if (!isCommentable()) return;
+
+    // Don't intercept if an input/textarea is focused
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
+
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.toString().trim() === '') return;
+
+    // Check selection is inside content
+    if (!contentEl.contains(sel.anchorNode)) return;
+
+    let clipboardText;
+    try {
+      clipboardText = await navigator.clipboard.readText();
+    } catch { return; }
+    if (!clipboardText || !clipboardText.trim()) return;
+
+    e.preventDefault();
+
+    const tab = getActiveTabFn();
+    if (!tab || !tab.commentable) return;
+
+    const range = sel.getRangeAt(0);
+    const heading = findNearestHeading(range.startContainer);
+
+    const payload = {
+      file: tab.path,
+      session_id: tab.session_id,
+      heading,
+      selected_text: sel.toString(),
+      content_type: 'text',
+      comment: clipboardText.trim(),
+    };
+
+    try {
+      await invoke('send_comment', { comment: payload });
+      appendUserComment(tab.session_id, payload);
+    } catch (err) {
+      console.error('Failed to send paste comment:', err);
+    }
+
+    dismiss();
+    sel.removeAllRanges();
+  });
+
   // Dismiss on scroll (button/form positions become stale)
   const scrollContainer = document.getElementById('content-scroll');
   if (scrollContainer) {
