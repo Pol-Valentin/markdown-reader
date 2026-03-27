@@ -21,8 +21,11 @@ A lightweight, fast Markdown reader for Linux (GNOME/Wayland) built with Tauri v
 - **CLI-first** — `markdown-reader file.md` opens or reuses an existing instance
 - **Detached from terminal** — launches in background, survives terminal close
 - **Inline comments → Claude Code** — select text or click a diagram, send feedback directly to your Claude Code session via MCP Channel
+- **Ctrl+V paste-to-comment** — select text, Ctrl+V → clipboard content sent as instant comment
 - **Two-way conversation** — Claude replies appear in a chat panel at the bottom of the document
+- **Session selector** — connect any tab to any active Claude Code session from the Reader
 - **Multi-session routing** — comments are routed to the correct Claude Code session via session IDs
+- **External links** — HTTP links open in your system browser
 - **Tiny** — ~14 MB binary, ~5 MB .deb
 
 ## Install
@@ -111,7 +114,9 @@ cd channel && bun install
 claude --dangerously-load-development-channels server:markdown-reader
 ```
 
-Claude can now open files with the `open_file` MCP tool. Select text or click a Mermaid/code block, then click 💬 to send a comment. Claude receives it with full context (file, heading, selection) and can reply back in the chat panel.
+Claude can now open files with the `open_file` MCP tool. Select text or click a Mermaid/code block, then click 💬 to send a comment (or Ctrl+V to send clipboard content instantly). Claude receives it with full context (file, heading, selection) and can reply back in the chat panel.
+
+You can also connect any tab to an active Claude session from the Reader itself — use the session selector dropdown in the chat panel header.
 
 ## Usage
 
@@ -137,8 +142,11 @@ markdown-reader docs/spec.md
 - **Click** a sidebar file to open in a new tab
 - **Right-click** a file to pin/unpin
 - **Middle-click** a tab to close it
-- **⇔ button** (bottom-right) toggles between centered and full-width layout
-- **Drag** the sidebar edge to resize
+- **☰** (tab bar) toggles sidebar visibility
+- **⟳** (bottom-right) refreshes the content manually
+- **⬌/⬄** (bottom-right) toggles between centered and full-width layout
+- **Ctrl+V** on selected text sends clipboard as comment (when connected to Claude)
+- **Drag** the sidebar edge or chat panel top edge to resize
 
 ## Tech stack
 
@@ -156,6 +164,7 @@ markdown-reader docs/spec.md
 | IPC | Unix sockets |
 | Workspace detection | D-Bus (GNOME Mutter) |
 | Claude Code bridge | [MCP SDK](https://www.npmjs.com/package/@modelcontextprotocol/sdk) (TypeScript) |
+| Clipboard | [tauri-plugin-clipboard-manager](https://v2.tauri.app/plugin/clipboard/) |
 
 ## License
 
