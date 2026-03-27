@@ -32,6 +32,11 @@ async function renderContent(tab) {
   try {
     const content = await invoke('read_file', { path: tab.path });
     const html = renderMarkdown(content);
+
+    // Save scroll position before DOM update
+    const scrollEl = document.getElementById('content-scroll');
+    const savedScroll = scrollEl.scrollTop;
+
     contentEl.innerHTML = html;
 
     // Add heading IDs for TOC navigation
@@ -39,8 +44,9 @@ async function renderContent(tab) {
       heading.id = heading.textContent.toLowerCase().replace(/[^\w]+/g, '-');
     });
 
-    // Render mermaid diagrams (lazy)
+    // Render mermaid diagrams (lazy), then restore scroll
     await renderMermaidDiagrams(contentEl);
+    scrollEl.scrollTop = savedScroll;
 
     await invoke('record_open', { path: tab.path });
     await invoke('watch_file', { path: tab.path });

@@ -258,6 +258,7 @@ export function ensureChatPanel(scrollContainer) {
   // Resizer lives outside the chat panel, above it in the flex layout
   const chatResizer = document.createElement('div');
   chatResizer.className = 'chat-resizer';
+  chatResizerEl = chatResizer;
 
   chatPanelEl = document.createElement('div');
   chatPanelEl.className = 'chat-panel';
@@ -275,6 +276,8 @@ export function ensureChatPanel(scrollContainer) {
       <input class="chat-input" type="text" placeholder="Répondre..." disabled />
     </div>
   `;
+  chatResizer.style.display = 'none';
+  chatPanelEl.style.display = 'none';
   const mainEl = document.getElementById('main');
   mainEl.appendChild(chatResizer);
   mainEl.appendChild(chatPanelEl);
@@ -283,6 +286,9 @@ export function ensureChatPanel(scrollContainer) {
   chatMessagesEl = chatPanelEl.querySelector('.chat-messages');
   sessionSelectEl = chatPanelEl.querySelector('.session-select');
   chatInputEl = chatPanelEl.querySelector('.chat-input');
+
+  // Prevent select clicks from toggling collapse
+  sessionSelectEl.addEventListener('click', (e) => e.stopPropagation());
 
   // Session selector change
   sessionSelectEl.addEventListener('change', () => {
@@ -332,6 +338,7 @@ export function ensureChatPanel(scrollContainer) {
   chatHeaderEl.addEventListener('click', () => {
     isCollapsed = !isCollapsed;
     chatPanelEl.classList.toggle('collapsed', isCollapsed);
+    chatResizer.classList.toggle('hidden', isCollapsed);
     chatPanelEl.querySelector('.chat-toggle').textContent = isCollapsed ? '▲' : '▼';
     if (!isCollapsed) {
       unreadCount = 0;
@@ -426,16 +433,16 @@ export function appendClaudeReply(sessionId, text) {
   showChatPanel();
 }
 
+let chatResizerEl = null;
+
 function showChatPanel() {
-  if (chatPanelEl) {
-    chatPanelEl.style.display = 'block';
-  }
+  if (chatPanelEl) chatPanelEl.style.display = 'flex';
+  if (chatResizerEl) chatResizerEl.style.display = 'block';
 }
 
 export function hideChatPanel() {
-  if (chatPanelEl) {
-    chatPanelEl.style.display = 'none';
-  }
+  if (chatPanelEl) chatPanelEl.style.display = 'none';
+  if (chatResizerEl) chatResizerEl.style.display = 'none';
 }
 
 export function updateChatVisibility() {

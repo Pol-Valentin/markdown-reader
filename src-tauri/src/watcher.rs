@@ -2,7 +2,7 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub struct FileWatcher {
     watcher: RecommendedWatcher,
@@ -11,31 +11,51 @@ pub struct FileWatcher {
 
 impl FileWatcher {
     /// Create a new FileWatcher. The callback is called with the path of the changed file,
-    /// debounced to ~200ms.
+    /// debounced: waits 300ms after the last event before firing.
     pub fn new<F>(on_change: F) -> Result<Self, String>
     where
-        F: Fn(PathBuf) + Send + 'static,
+        F: Fn(PathBuf) + Send + Sync + 'static,
     {
-        let last_events: Arc<Mutex<std::collections::HashMap<PathBuf, Instant>>> =
+        let pending: Arc<Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>> =
             Arc::new(Mutex::new(std::collections::HashMap::new()));
-        let debounce_duration = Duration::from_millis(200);
+        let debounce_ms = 300u64;
 
-        let last_events_clone = last_events.clone();
+        let pending_clone = pending.clone();
+        let on_change = Arc::new(on_change);
+
+        // Polling thread: checks every 100ms if any pending path has been stable long enough
+        let on_change_poll = on_change.clone();
+        let pending_poll = pending.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_millis(100));
+                let now = std::time::Instant::now();
+                let mut to_fire = Vec::new();
+                {
+                    let mut map = pending_poll.lock().unwrap();
+                    map.retain(|path, instant| {
+                        if now.duration_since(*instant) >= Duration::from_millis(debounce_ms) {
+                            to_fire.push(path.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+                for path in to_fire {
+                    on_change_poll(path);
+                }
+            }
+        });
+
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     if event.kind.is_modify() || event.kind.is_create() {
+                        let mut map = pending_clone.lock().unwrap();
+                        let now = std::time::Instant::now();
                         for path in &event.paths {
-                            let mut last = last_events_clone.lock().unwrap();
-                            let now = Instant::now();
-                            if let Some(prev) = last.get(path) {
-                                if now.duration_since(*prev) < debounce_duration {
-                                    last.insert(path.clone(), now);
-                                    continue;
-                                }
-                            }
-                            last.insert(path.clone(), now);
-                            on_change(path.clone());
+                            map.insert(path.clone(), now);
                         }
                     }
                 }

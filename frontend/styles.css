@@ -65,14 +65,31 @@ body {
 }
 
 #sidebar-resizer {
-  width: 4px;
-  cursor: col-resize;
-  background: transparent;
+  width: 0;
+  position: relative;
   flex-shrink: 0;
-  transition: background 0.2s;
+  cursor: col-resize;
+  z-index: 10;
 }
-#sidebar-resizer:hover,
-#sidebar-resizer.dragging {
+#sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  width: 16px;
+}
+#sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  transition: background 0.15s;
+}
+#sidebar-resizer:hover::after,
+#sidebar-resizer.dragging::after {
   background: var(--accent);
 }
 
@@ -486,20 +503,27 @@ body.full-width #content {
 }
 
 .chat-resizer {
-  height: 8px;
-  cursor: ns-resize;
+  height: 0;
+  position: relative;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  cursor: ns-resize;
+  z-index: 10;
+}
+.chat-resizer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  height: 16px;
 }
 .chat-resizer::after {
   content: '';
-  display: block;
-  height: 3px;
-  background: var(--border);
-  width: 40px;
-  border-radius: 2px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
   transition: background 0.15s;
 }
 .chat-resizer:hover::after,
@@ -511,12 +535,11 @@ body.full-width #content {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   cursor: pointer;
   user-select: none;
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
-  height: 34px;
 }
 .chat-header:hover { background: var(--hover); }
 
@@ -534,6 +557,7 @@ body.full-width #content {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
+  margin: 0 4px;
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
@@ -575,6 +599,9 @@ body.full-width #content {
 
 .chat-panel.collapsed .chat-messages,
 .chat-panel.collapsed .chat-input-area {
+  display: none;
+}
+.chat-resizer.hidden {
   display: none;
 }
 
@@ -634,7 +661,6 @@ body.full-width #content {
   padding: 6px 12px;
   font-size: 13px;
   font-family: inherit;
-  height: 32px;
   transition: border-color 0.15s;
 }
 .chat-input:focus {

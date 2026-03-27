@@ -16,6 +16,13 @@ const READER_BINARY = resolve(__dirname, '../src-tauri/target/release/markdown-r
 // --- Session ID ---
 const SESSION_ID = randomUUID()
 
+// Write session ID to a known file so statusline can read it
+import { writeFileSync, unlinkSync } from 'fs'
+const runtimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`
+const sessionFile = `${runtimeDir}/md-reader-channel-${process.pid}.session`
+writeFileSync(sessionFile, `${SESSION_ID}\n${process.ppid}`)
+process.on('exit', () => { try { unlinkSync(sessionFile) } catch {} })
+
 // --- Workspace detection ---
 function getWorkspaceId(): number {
   try {
