@@ -56,9 +56,8 @@ export function initComments(content, getActiveTab) {
     if (e.key === 'Escape') dismiss();
   });
 
-  // Ctrl+V on selected text → instant comment from clipboard
-  document.addEventListener('keydown', async (e) => {
-    if (!(e.ctrlKey && e.key === 'v')) return;
+  // Paste on selected text → instant comment from clipboard
+  document.addEventListener('paste', async (e) => {
     if (!isCommentable()) return;
 
     // Don't intercept if an input/textarea is focused
@@ -71,10 +70,7 @@ export function initComments(content, getActiveTab) {
     // Check selection is inside content
     if (!contentEl.contains(sel.anchorNode)) return;
 
-    let clipboardText;
-    try {
-      clipboardText = await navigator.clipboard.readText();
-    } catch { return; }
+    const clipboardText = e.clipboardData?.getData('text/plain');
     if (!clipboardText || !clipboardText.trim()) return;
 
     e.preventDefault();
