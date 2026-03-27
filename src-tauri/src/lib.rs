@@ -64,6 +64,7 @@ pub fn run_with_args(args: Vec<String>) {
     let session_registry = ipc::new_session_registry();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState {
             initial_file: Mutex::new(file_path),
             workspace_id,

@@ -18,6 +18,7 @@
   "type": "commonjs",
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.42",
     "marked": "^17.0.5",
