@@ -12,22 +12,38 @@ La sidebar SHALL afficher une section "📌 Épinglés" en haut, listant les fic
 - **THEN** la section Épinglés est masquée
 
 ### Requirement: Section Récents
-La sidebar SHALL afficher une section "🕐 Récents" listant tous les fichiers de l'historique triés par `last_opened` descendant, au format `nom — contexte`.
+La sidebar SHALL afficher une section "🕐 Récents" listant les 10 fichiers les plus récents de l'historique triés par `last_opened` descendant, au format `nom — contexte`.
 
 #### Scenario: Historique avec fichiers
+- **WHEN** l'historique contient 15 fichiers
+- **THEN** seuls les 10 fichiers les plus récents sont listés du plus récent au plus ancien au format `spec.md — …markdown-reader/docs`
+
+#### Scenario: Historique avec moins de 10 fichiers
 - **WHEN** l'historique contient 5 fichiers
-- **THEN** les 5 fichiers sont listés du plus récent au plus ancien au format `spec.md — …markdown-reader/docs`
+- **THEN** les 5 fichiers sont listés du plus récent au plus ancien
 
 ### Requirement: Section Par dossier
-La sidebar SHALL afficher une section "📂 Par dossier" organisant les fichiers en arbre récursif multi-niveaux. Chaque niveau SHALL être collapsible indépendamment. Les dossiers racines de l'arbre SHALL être les ancêtres communs les plus hauts (git root ou 2 niveaux parents).
+La sidebar SHALL afficher une section "📂 {nom_racine}" organisant les fichiers en arbre récursif multi-niveaux. La racine de l'arbre SHALL être le plus long répertoire commun (common prefix) de tous les fichiers de l'historique. Le titre de la section affiche le nom du dossier racine commun. Chaque niveau SHALL être collapsible indépendamment. L'arbre ne dépend plus du git root — il est calculé purement à partir des chemins des fichiers.
 
 #### Scenario: Fichiers dans une hiérarchie profonde
 - **WHEN** l'historique contient `/home/pol/dev/odys/saas/docs/api/README.md` et `/home/pol/dev/odys/saas/CHANGELOG.md`
-- **THEN** l'arbre affiche `…odys/saas/` → `CHANGELOG.md` et `docs/` → `api/` → `README.md`
+- **THEN** la racine commune est `/home/pol/dev/odys/saas`, le titre est "📂 saas", et l'arbre affiche `CHANGELOG.md` et `docs/` → `api/` → `README.md`
+
+#### Scenario: Fichiers de projets différents
+- **WHEN** l'historique contient `/home/pol/dev/projet-a/README.md` et `/home/pol/dev/projet-b/spec.md`
+- **THEN** la racine commune est `/home/pol/dev`, le titre est "📂 dev", et l'arbre affiche `projet-a/` → `README.md` et `projet-b/` → `spec.md`
+
+#### Scenario: L'arbre affiche tous les fichiers
+- **WHEN** l'historique contient 20 fichiers
+- **THEN** la section Par dossier affiche les 20 fichiers dans l'arbre (pas de limite, contrairement à la section Récents)
+
+#### Scenario: Compaction des dossiers à enfant unique
+- **WHEN** un dossier ne contient qu'un seul sous-dossier (et pas de fichiers)
+- **THEN** les deux niveaux sont fusionnés en un seul noeud affiché `parent/enfant` (ex: `perso/markdown-reader`)
 
 #### Scenario: Collapse d'un dossier
 - **WHEN** l'utilisateur clique sur un dossier ouvert (▼)
-- **THEN** le dossier se collapse (▶) et masque ses enfants
+- **THEN** le dossier se collapse (▶) et masque ses enfants. La clé de collapse utilise le chemin complet dans l'arbre (pas juste le nom du dossier) pour éviter les conflits entre dossiers homonymes
 
 ### Requirement: Format d'affichage nom — contexte
 Les sections Épinglés et Récents SHALL afficher chaque fichier au format `nom_fichier — contexte_dossier`. Le nom du fichier n'est JAMAIS tronqué. Le contexte s'adapte à la largeur disponible avec `…` au début si nécessaire. Le contexte est le chemin relatif depuis le git root (ou 2 niveaux parents si pas de git).

@@ -16,19 +16,10 @@ export function setCallbacks({ onFileClick: fc, onPin: pin, onUnpin: unpin }) {
  * Truncate a path for display: show as much context as possible from git root.
  * Returns the context part (without the filename).
  */
-function truncateContext(fullPath, gitRoot, maxWidth) {
+function truncateContext(fullPath, maxWidth) {
   const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
-
-  let relativePath;
-  if (gitRoot && dir.startsWith(gitRoot)) {
-    // Include the git root folder name
-    const gitParent = gitRoot.substring(0, gitRoot.lastIndexOf('/'));
-    relativePath = dir.substring(gitParent.length + 1);
-  } else {
-    // Fallback: 2 levels up from parent
-    const parts = dir.split('/');
-    relativePath = parts.slice(-3).join('/');
-  }
+  const parts = dir.split('/');
+  const relativePath = parts.slice(-3).join('/');
 
   if (!relativePath) return '';
 
@@ -41,10 +32,10 @@ function truncateContext(fullPath, gitRoot, maxWidth) {
   }
 
   // Truncate from the beginning
-  const parts = relativePath.split('/');
+  const segments = relativePath.split('/');
   let result = '';
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const candidate = parts.slice(i).join('/');
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const candidate = segments.slice(i).join('/');
     if (candidate.length + 1 <= maxChars) {
       result = candidate;
     } else {
@@ -52,7 +43,7 @@ function truncateContext(fullPath, gitRoot, maxWidth) {
     }
   }
 
-  return result ? `…${result}` : `…${parts[parts.length - 1]}`;
+  return result ? `…${result}` : `…${segments[segments.length - 1]}`;
 }
 
 function getFileName(path) {
@@ -98,7 +89,7 @@ function createContextMenu(filePath, isPinned) {
   return menu;
 }
 
-function renderFileItem(path, gitRoots, options = {}) {
+function renderFileItem(path, options = {}) {
   const { showUnpin = false, showContext = true } = options;
 
   const el = document.createElement('div');
@@ -111,8 +102,7 @@ function renderFileItem(path, gitRoots, options = {}) {
   el.appendChild(nameSpan);
 
   if (showContext) {
-    const gitRoot = gitRoots[path] || null;
-    const context = truncateContext(path, gitRoot, 150);
+    const context = truncateContext(path, 150);
     if (context) {
       const contextSpan = document.createElement('span');
       contextSpan.className = 'file-context';
@@ -149,24 +139,38 @@ function renderFileItem(path, gitRoots, options = {}) {
 }
 
 /**
- * Build a recursive folder tree from a flat list of paths.
+ * Find the longest common directory prefix of a list of absolute paths.
  */
-function buildFolderTree(entries, gitRoots) {
+function commonPrefix(paths) {
+  if (paths.length === 0) return '/';
+  const split = paths.map(p => p.split('/'));
+  const first = split[0];
+  let i = 0;
+  while (i < first.length) {
+    if (split.every(s => s[i] === first[i])) i++;
+    else break;
+  }
+  // Ensure we stop at a directory, not mid-filename
+  const common = first.slice(0, i).join('/');
+  // If common is a file path (matches one of the inputs), go up one level
+  if (paths.includes(common)) {
+    return common.substring(0, common.lastIndexOf('/')) || '/';
+  }
+  return common || '/';
+}
+
+/**
+ * Build a recursive folder tree from a flat list of paths.
+ * Uses the longest common directory prefix as root.
+ */
+function buildFolderTree(entries) {
+  const paths = entries.map(e => e.path);
+  const prefix = commonPrefix(paths.map(p => p.substring(0, p.lastIndexOf('/'))));
+
   const tree = {};
 
   for (const entry of entries) {
-    const path = entry.path;
-    const gitRoot = gitRoots[path];
-
-    let relativePath;
-    if (gitRoot) {
-      const gitParent = gitRoot.substring(0, gitRoot.lastIndexOf('/'));
-      relativePath = path.substring(gitParent.length + 1);
-    } else {
-      const parts = path.split('/');
-      relativePath = parts.slice(-4).join('/');
-    }
-
+    const relativePath = entry.path.substring(prefix.length + 1);
     const segments = relativePath.split('/');
     let current = tree;
     for (let i = 0; i < segments.length - 1; i++) {
@@ -175,13 +179,34 @@ function buildFolderTree(entries, gitRoots) {
       current = current[seg].__children;
     }
     const fileName = segments[segments.length - 1];
-    current[fileName] = { __file: path };
+    current[fileName] = { __file: entry.path };
   }
 
-  return tree;
+  // Compact single-child directories into "parent/child" nodes
+  function compact(node) {
+    for (const [key, value] of Object.entries(node)) {
+      if (!value.__children) continue;
+      compact(value.__children);
+      const childKeys = Object.keys(value.__children);
+      // If this dir has exactly one child and it's also a dir, merge them
+      if (childKeys.length === 1) {
+        const childKey = childKeys[0];
+        const childValue = value.__children[childKey];
+        if (childValue.__children) {
+          const merged = `${key}/${childKey}`;
+          node[merged] = childValue;
+          delete node[key];
+        }
+      }
+    }
+  }
+  compact(tree);
+
+  return { root: prefix, tree };
 }
 
-function renderTree(tree, container, collapsed, pinnedSet) {
+function renderTree(tree, container, collapsed, pinnedSet, parentPath) {
+  const pathPrefix = parentPath || '';
   const entries = Object.entries(tree).sort(([a, va], [b, vb]) => {
     const aIsDir = va.__children !== undefined;
     const bIsDir = vb.__children !== undefined;
@@ -216,7 +241,7 @@ function renderTree(tree, container, collapsed, pinnedSet) {
 
       const header = document.createElement('div');
       header.className = 'tree-dir-header';
-      const key = name;
+      const key = `${pathPrefix}/${name}`;
       const isCollapsed = collapsed.has(key);
       header.textContent = `${isCollapsed ? '▶' : '▼'} 📂 ${name}`;
       header.addEventListener('click', () => {
@@ -225,7 +250,6 @@ function renderTree(tree, container, collapsed, pinnedSet) {
         } else {
           collapsed.add(key);
         }
-        // Re-render the children
         const childContainer = dir.querySelector('.tree-children');
         if (childContainer) {
           childContainer.style.display = collapsed.has(key) ? 'none' : 'block';
@@ -237,7 +261,7 @@ function renderTree(tree, container, collapsed, pinnedSet) {
       const children = document.createElement('div');
       children.className = 'tree-children';
       children.style.display = isCollapsed ? 'none' : 'block';
-      renderTree(value.__children, children, collapsed, pinnedSet);
+      renderTree(value.__children, children, collapsed, pinnedSet, key);
       dir.appendChild(children);
 
       container.appendChild(dir);
@@ -248,7 +272,7 @@ function renderTree(tree, container, collapsed, pinnedSet) {
 // Track collapsed folders across renders
 const collapsedFolders = new Set();
 
-export function renderSidebar(container, history, gitRoots, activeFile) {
+export function renderSidebar(container, history, activeFile) {
   container.innerHTML = '';
 
   // Section 1: Pinned
@@ -264,7 +288,7 @@ export function renderSidebar(container, history, gitRoots, activeFile) {
     const list = document.createElement('div');
     list.className = 'sidebar-section-list';
     for (const path of history.pinned) {
-      list.appendChild(renderFileItem(path, gitRoots, { showUnpin: true, showContext: true }));
+      list.appendChild(renderFileItem(path, { showUnpin: true, showContext: true }));
     }
     section.appendChild(list);
     container.appendChild(section);
@@ -273,7 +297,7 @@ export function renderSidebar(container, history, gitRoots, activeFile) {
   // Section 2: Recent
   const sortedEntries = [...history.entries].sort(
     (a, b) => new Date(b.last_opened) - new Date(a.last_opened)
-  );
+  ).slice(0, 10);
 
   if (sortedEntries.length > 0) {
     const section = document.createElement('div');
@@ -287,7 +311,7 @@ export function renderSidebar(container, history, gitRoots, activeFile) {
     const list = document.createElement('div');
     list.className = 'sidebar-section-list';
     for (const entry of sortedEntries) {
-      const el = renderFileItem(entry.path, gitRoots, { showContext: true });
+      const el = renderFileItem(entry.path, { showContext: true });
       if (entry.path === activeFile) el.classList.add('active');
       list.appendChild(el);
     }
@@ -295,17 +319,19 @@ export function renderSidebar(container, history, gitRoots, activeFile) {
     container.appendChild(section);
   }
 
-  // Section 3: By Folder
-  if (sortedEntries.length > 0) {
+  // Section 3: By Folder (all entries, not limited to 10)
+  const allEntries = [...history.entries];
+  if (allEntries.length > 0) {
+    const { root, tree } = buildFolderTree(allEntries);
     const section = document.createElement('div');
     section.className = 'sidebar-section';
 
     const header = document.createElement('div');
     header.className = 'sidebar-section-header';
-    header.textContent = '📂 Par dossier';
+    const rootName = root.split('/').pop() || root;
+    header.innerHTML = `📂 ${rootName} <span class="section-count" title="${root}">${allEntries.length}</span>`;
     section.appendChild(header);
 
-    const tree = buildFolderTree(sortedEntries, gitRoots);
     const treeContainer = document.createElement('div');
     treeContainer.className = 'sidebar-tree';
     const pinnedSet = new Set(history.pinned);

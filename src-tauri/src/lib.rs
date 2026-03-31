@@ -79,7 +79,6 @@ pub fn run_with_args(args: Vec<String>) {
             commands::pin_file,
             commands::unpin_file,
             commands::resolve_path,
-            commands::get_git_root,
             commands::get_initial_file,
             commands::watch_file,
             commands::unwatch_file,

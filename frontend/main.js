@@ -14,7 +14,6 @@ const emptyEl = document.getElementById('empty-state');
 
 // State
 let history = { version: 1, pinned: [], entries: [] };
-const gitRoots = {}; // cache: path -> git root
 
 // --- Rendering ---
 
@@ -58,25 +57,8 @@ async function renderContent(tab) {
 async function refreshSidebar() {
   try {
     history = await invoke('get_history');
-
-    // Resolve git roots for all paths
-    const allPaths = [
-      ...history.pinned,
-      ...history.entries.map(e => e.path),
-    ];
-    for (const path of allPaths) {
-      if (!gitRoots[path]) {
-        try {
-          const root = await invoke('get_git_root', { path });
-          gitRoots[path] = root;
-        } catch {
-          gitRoots[path] = null;
-        }
-      }
-    }
-
     const activeTab = getActiveTab();
-    renderSidebar(sidebarEl, history, gitRoots, activeTab?.path);
+    renderSidebar(sidebarEl, history, activeTab?.path);
   } catch (err) {
     console.error('Failed to refresh sidebar:', err);
   }

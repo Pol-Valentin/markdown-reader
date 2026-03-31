@@ -2,7 +2,7 @@ use crate::history::History;
 use crate::ipc;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tauri::State;
 
@@ -49,21 +49,7 @@ pub fn resolve_path(path: String) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-pub fn get_git_root(path: String) -> Option<String> {
-    let dir = Path::new(&path).parent()?;
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(dir)
-        .output()
-        .ok()?;
 
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        None
-    }
-}
 
 #[tauri::command]
 pub fn get_initial_file(state: State<'_, AppState>) -> Option<String> {
