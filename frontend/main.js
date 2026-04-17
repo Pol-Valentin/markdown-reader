@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { renderMarkdown, renderMermaidDiagrams, generateTOC } from './renderer.js';
+import { renderMarkdown, renderMermaidDiagrams, resolveImages, generateTOC } from './renderer.js';
 import { openTab, closeTab, getActiveTab, getTabs, setOnTabChange, renderTabBar } from './tabs.js';
-import { renderSidebar, setCallbacks as setSidebarCallbacks } from './sidebar.js';
+import { renderSidebar, setCallbacks as setSidebarCallbacks, invalidateDir } from './sidebar.js';
 import { initComments, ensureChatPanel, appendClaudeReply, updateChatVisibility, updateSessionList, setOnSessionChange } from './comments.js';
 import { updateTabSession, clearTabSession } from './tabs.js';
 
@@ -43,7 +43,8 @@ async function renderContent(tab) {
       heading.id = heading.textContent.toLowerCase().replace(/[^\w]+/g, '-');
     });
 
-    // Render mermaid diagrams (lazy), then restore scroll
+    // Resolve images (relative paths → data URLs), then render mermaid, restore scroll
+    await resolveImages(contentEl, tab.path);
     await renderMermaidDiagrams(contentEl);
     scrollEl.scrollTop = savedScroll;
 
@@ -92,6 +93,17 @@ setSidebarCallbacks({
     await invoke('unpin_file', { path });
     await refreshSidebar();
   },
+  onPinDir: async (path) => {
+    await invoke('pin_dir', { path });
+    await refreshSidebar();
+  },
+  onUnpinDir: async (path) => {
+    await invoke('unpin_dir', { path });
+    await refreshSidebar();
+  },
+  onRequestRefresh: async () => {
+    await refreshSidebar();
+  },
 });
 
 // --- Tauri events ---
@@ -115,6 +127,11 @@ listen('file-changed', async (event) => {
 });
 
 listen('history-changed', async () => {
+  await refreshSidebar();
+});
+
+listen('dir-changed', async (event) => {
+  invalidateDir(event.payload);
   await refreshSidebar();
 });
 

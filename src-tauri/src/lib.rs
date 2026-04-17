@@ -11,6 +11,7 @@ pub struct AppState {
     pub initial_file: Mutex<Option<String>>,
     pub workspace_id: u32,
     pub file_watcher: Mutex<Option<watcher::FileWatcher>>,
+    pub dir_watcher: Mutex<Option<watcher::DirWatcher>>,
     pub subscribers: ipc::SubscriberMap,
     pub session_registry: ipc::SessionRegistry,
 }
@@ -69,6 +70,7 @@ pub fn run_with_args(args: Vec<String>) {
             initial_file: Mutex::new(file_path),
             workspace_id,
             file_watcher: Mutex::new(None),
+            dir_watcher: Mutex::new(None),
             subscribers: subscribers.clone(),
             session_registry: session_registry.clone(),
         })
@@ -79,10 +81,16 @@ pub fn run_with_args(args: Vec<String>) {
             commands::record_open,
             commands::pin_file,
             commands::unpin_file,
+            commands::pin_dir,
+            commands::unpin_dir,
             commands::resolve_path,
+            commands::get_home_dir,
+            commands::list_directory,
             commands::get_initial_file,
             commands::watch_file,
             commands::unwatch_file,
+            commands::watch_dir,
+            commands::unwatch_dir,
             commands::send_comment,
             commands::get_sessions,
             commands::open_url,
@@ -106,6 +114,17 @@ pub fn run_with_args(args: Vec<String>) {
             if let Ok(fw) = fw {
                 let state = handle.state::<AppState>();
                 *state.file_watcher.lock().unwrap() = Some(fw);
+            }
+
+            // Set up dir watcher (emits when entries are created/removed/renamed)
+            let dir_watcher_handle = handle.clone();
+            let dw = watcher::DirWatcher::new(move |dir_path| {
+                let _ = dir_watcher_handle
+                    .emit("dir-changed", dir_path.to_string_lossy().to_string());
+            });
+            if let Ok(dw) = dw {
+                let state = handle.state::<AppState>();
+                *state.dir_watcher.lock().unwrap() = Some(dw);
             }
 
             // Start IPC server for this workspace

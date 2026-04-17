@@ -102,6 +102,110 @@ impl FileWatcher {
     }
 }
 
+pub struct DirWatcher {
+    watcher: RecommendedWatcher,
+    watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
+}
+
+impl DirWatcher {
+    /// Watches directories non-recursively. The callback is invoked with the parent
+    /// directory path whenever a child entry is created, removed, or renamed.
+    /// Debounced 300ms per directory.
+    pub fn new<F>(on_change: F) -> Result<Self, String>
+    where
+        F: Fn(PathBuf) + Send + Sync + 'static,
+    {
+        let pending: Arc<Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let debounce_ms = 300u64;
+
+        let pending_clone = pending.clone();
+        let on_change = Arc::new(on_change);
+
+        let on_change_poll = on_change.clone();
+        let pending_poll = pending.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(100));
+            let now = std::time::Instant::now();
+            let mut to_fire = Vec::new();
+            {
+                let mut map = pending_poll.lock().unwrap();
+                map.retain(|path, instant| {
+                    if now.duration_since(*instant) >= Duration::from_millis(debounce_ms) {
+                        to_fire.push(path.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            for path in to_fire {
+                on_change_poll(path);
+            }
+        });
+
+        let watcher = RecommendedWatcher::new(
+            move |res: Result<Event, notify::Error>| {
+                if let Ok(event) = res {
+                    let relevant = event.kind.is_create()
+                        || event.kind.is_remove()
+                        || matches!(
+                            event.kind,
+                            notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+                        );
+                    if relevant {
+                        let mut map = pending_clone.lock().unwrap();
+                        let now = std::time::Instant::now();
+                        for file_path in &event.paths {
+                            if let Some(parent) = file_path.parent() {
+                                map.insert(parent.to_path_buf(), now);
+                            }
+                        }
+                    }
+                }
+            },
+            Config::default(),
+        )
+        .map_err(|e| format!("Failed to create dir watcher: {e}"))?;
+
+        Ok(Self {
+            watcher,
+            watched_paths: Arc::new(Mutex::new(HashSet::new())),
+        })
+    }
+
+    pub fn watch(&mut self, path: &Path) -> Result<(), String> {
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize: {e}"))?;
+
+        let mut paths = self.watched_paths.lock().unwrap();
+        if paths.contains(&canonical) {
+            return Ok(());
+        }
+
+        self.watcher
+            .watch(&canonical, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch dir: {e}"))?;
+        paths.insert(canonical);
+        Ok(())
+    }
+
+    pub fn unwatch(&mut self, path: &Path) -> Result<(), String> {
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize: {e}"))?;
+
+        let mut paths = self.watched_paths.lock().unwrap();
+        if paths.remove(&canonical) {
+            self.watcher
+                .unwatch(&canonical)
+                .map_err(|e| format!("Failed to unwatch dir: {e}"))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

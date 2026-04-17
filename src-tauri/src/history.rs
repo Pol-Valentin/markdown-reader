@@ -15,6 +15,8 @@ pub struct HistoryEntry {
 pub struct History {
     pub version: u32,
     pub pinned: Vec<String>,
+    #[serde(default)]
+    pub pinned_dirs: Vec<String>,
     pub entries: Vec<HistoryEntry>,
 }
 
@@ -33,6 +35,7 @@ impl History {
         Self {
             version: 1,
             pinned: Vec::new(),
+            pinned_dirs: Vec::new(),
             entries: Vec::new(),
         }
     }
@@ -125,6 +128,17 @@ impl History {
 
     pub fn unpin(&mut self, path: &str) {
         self.pinned.retain(|p| p != path);
+    }
+
+    pub fn pin_dir(&mut self, path: &str) {
+        let path_str = path.to_string();
+        if !self.pinned_dirs.contains(&path_str) {
+            self.pinned_dirs.push(path_str);
+        }
+    }
+
+    pub fn unpin_dir(&mut self, path: &str) {
+        self.pinned_dirs.retain(|p| p != path);
     }
 }
 

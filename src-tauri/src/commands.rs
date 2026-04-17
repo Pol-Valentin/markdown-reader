@@ -66,6 +66,184 @@ pub fn unpin_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn pin_dir(path: String) -> Result<(), String> {
+    let mut history = History::load();
+    history.pin_dir(&path);
+    history.save()
+}
+
+#[tauri::command]
+pub fn unpin_dir(path: String) -> Result<(), String> {
+    let mut history = History::load();
+    history.unpin_dir(&path);
+    history.save()
+}
+
+#[tauri::command]
+pub fn get_home_dir() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Home directory not found".to_string())
+}
+
+#[derive(Serialize)]
+pub struct DirEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+}
+
+const SKIP_DIRS: &[&str] = &["node_modules"];
+const HAS_MD_BUDGET: usize = 2000;
+
+fn should_skip_name(name: &str) -> bool {
+    name.starts_with('.') || SKIP_DIRS.contains(&name)
+}
+
+fn is_md_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
+
+/// Recursively checks whether a directory contains at least one `.md` /
+/// `.markdown` file, applying the same skip filters as `list_directory`.
+/// Uses a visit budget to bound worst-case runtime on huge non-md trees;
+/// if the budget is exhausted, returns `true` (conservative: keep dir visible).
+fn has_markdown(dir: &std::path::Path, remaining: &mut usize) -> bool {
+    if *remaining == 0 {
+        return true;
+    }
+    *remaining -= 1;
+    let read = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    for entry in read.flatten() {
+        if *remaining == 0 {
+            return true;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if should_skip_name(&name) {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            if has_markdown(&entry.path(), remaining) {
+                return true;
+            }
+        } else if is_md_file(&name) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns the single visible child of `dir`, or `None` if there are zero or
+/// two-or-more visible children. Early-exits on the second match.
+fn only_visible_child(dir: &std::path::Path) -> Option<(String, std::path::PathBuf, bool)> {
+    let read = std::fs::read_dir(dir).ok()?;
+    let mut found: Option<(String, std::path::PathBuf, bool)> = None;
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if should_skip_name(&name) {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        let is_dir = file_type.is_dir();
+        if is_dir {
+            let mut budget = HAS_MD_BUDGET;
+            if !has_markdown(&entry.path(), &mut budget) {
+                continue;
+            }
+        } else if !is_md_file(&name) {
+            continue;
+        }
+        if found.is_some() {
+            return None;
+        }
+        found = Some((name, entry.path(), is_dir));
+    }
+    found
+}
+
+/// Walks through single-child dir chains, collapsing them into a slash-joined
+/// display name. Stops when a dir has !=1 visible children or the single child
+/// is a file. Returns (display_name, deepest_dir_path).
+fn compact_dir(start_name: &str, start_path: &std::path::Path) -> (String, std::path::PathBuf) {
+    let mut name = start_name.to_string();
+    let mut path = start_path.to_path_buf();
+    while let Some((child_name, child_path, child_is_dir)) = only_visible_child(&path) {
+        if !child_is_dir {
+            break;
+        }
+        name.push('/');
+        name.push_str(&child_name);
+        path = child_path;
+    }
+    (name, path)
+}
+
+#[tauri::command]
+pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
+    let read = std::fs::read_dir(&path).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let mut result = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if should_skip_name(&name) {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        let is_dir = file_type.is_dir();
+        if is_dir {
+            let mut budget = HAS_MD_BUDGET;
+            if !has_markdown(&entry.path(), &mut budget) {
+                continue;
+            }
+            let (display_name, target_path) = compact_dir(&name, &entry.path());
+            result.push(DirEntry {
+                name: display_name,
+                path: target_path.to_string_lossy().to_string(),
+                is_dir: true,
+            });
+            continue;
+        }
+        if !is_md_file(&name) {
+            continue;
+        }
+        let full_path = entry.path().to_string_lossy().to_string();
+        result.push(DirEntry {
+            name,
+            path: full_path,
+            is_dir,
+        });
+    }
+    result.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn resolve_path(path: String) -> Result<String, String> {
     let p = PathBuf::from(&path);
     if p.is_absolute() {
@@ -101,6 +279,26 @@ pub fn unwatch_file(path: String, state: State<'_, AppState>) -> Result<(), Stri
         w.unwatch(std::path::Path::new(&path))
     } else {
         Err("File watcher not initialized".into())
+    }
+}
+
+#[tauri::command]
+pub fn watch_dir(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut watcher = state.dir_watcher.lock().unwrap();
+    if let Some(ref mut w) = *watcher {
+        w.watch(std::path::Path::new(&path))
+    } else {
+        Err("Dir watcher not initialized".into())
+    }
+}
+
+#[tauri::command]
+pub fn unwatch_dir(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut watcher = state.dir_watcher.lock().unwrap();
+    if let Some(ref mut w) = *watcher {
+        w.unwatch(std::path::Path::new(&path))
+    } else {
+        Err("Dir watcher not initialized".into())
     }
 }
 

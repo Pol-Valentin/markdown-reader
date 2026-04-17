@@ -364,11 +364,31 @@ body.full-width #content {
 }
 .file-unpin:hover { background: var(--hover); color: var(--text-primary); }
 
+.dir-refresh {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.dir-refresh:hover { background: var(--hover); color: var(--text-primary); }
+.dir-refresh.spinning { animation: dir-spin 0.6s linear infinite; }
+.tree-dir-header .dir-refresh + .file-unpin { margin-left: 0; }
+
+@keyframes dir-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Tree */
 .sidebar-tree { padding: 0 6px 8px; }
 
 .tree-dir { margin-left: 0; }
 .tree-dir-header {
+  display: flex;
+  align-items: center;
   font-size: 12px;
   color: var(--text-secondary);
   padding: 3px 8px;
@@ -390,6 +410,14 @@ body.full-width #content {
   transition: background 0.1s;
 }
 .tree-file:hover { background: var(--hover); }
+
+.tree-loading,
+.tree-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 3px 8px;
+}
 
 .sidebar-empty {
   padding: 20px;

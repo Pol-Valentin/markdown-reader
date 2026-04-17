@@ -1,15 +1,48 @@
 /**
- * Sidebar module — 3 sections: Pinned, Recent, By Folder
+ * Sidebar module — 3 sections: Pinned, Recent, Home browser (lazy)
  */
+
+import { invoke } from '@tauri-apps/api/core';
 
 let onFileClick = null;
 let onPin = null;
 let onUnpin = null;
+let onPinDir = null;
+let onUnpinDir = null;
+let onRequestRefresh = null;
 
-export function setCallbacks({ onFileClick: fc, onPin: pin, onUnpin: unpin }) {
+let homeRoot = null;
+const dirCache = new Map();
+const expandedPaths = new Set();
+const loadingPaths = new Set();
+
+export function setCallbacks({
+  onFileClick: fc,
+  onPin: pin,
+  onUnpin: unpin,
+  onPinDir: pinDir,
+  onUnpinDir: unpinDir,
+  onRequestRefresh: refresh,
+}) {
   onFileClick = fc;
   onPin = pin;
   onUnpin = unpin;
+  onPinDir = pinDir;
+  onUnpinDir = unpinDir;
+  onRequestRefresh = refresh;
+}
+
+function invalidateDirCache(rootPath) {
+  const prefix = `${rootPath}/`;
+  for (const key of Array.from(dirCache.keys())) {
+    if (key === rootPath || key.startsWith(prefix)) {
+      dirCache.delete(key);
+    }
+  }
+}
+
+export function invalidateDir(path) {
+  dirCache.delete(path);
 }
 
 /**
@@ -50,7 +83,7 @@ function getFileName(path) {
   return path.split('/').pop();
 }
 
-function createContextMenu(filePath, isPinned) {
+function createContextMenu(targetPath, isPinned, isDir = false) {
   // Remove existing context menu
   const existing = document.querySelector('.context-menu');
   if (existing) existing.remove();
@@ -60,16 +93,20 @@ function createContextMenu(filePath, isPinned) {
 
   const item = document.createElement('div');
   item.className = 'context-menu-item';
+  const pinHandler = isDir ? onPinDir : onPin;
+  const unpinHandler = isDir ? onUnpinDir : onUnpin;
+  const pinLabel = isDir ? '📌 Épingler dossier' : '📌 Épingler';
+  const unpinLabel = isDir ? 'Désépingler dossier' : 'Désépingler';
   if (isPinned) {
-    item.textContent = 'Désépingler';
+    item.textContent = unpinLabel;
     item.addEventListener('click', () => {
-      if (onUnpin) onUnpin(filePath);
+      if (unpinHandler) unpinHandler(targetPath);
       menu.remove();
     });
   } else {
-    item.textContent = '📌 Épingler';
+    item.textContent = pinLabel;
     item.addEventListener('click', () => {
-      if (onPin) onPin(filePath);
+      if (pinHandler) pinHandler(targetPath);
       menu.remove();
     });
   }
@@ -138,155 +175,223 @@ function renderFileItem(path, options = {}) {
   return el;
 }
 
-/**
- * Find the longest common directory prefix of a list of absolute paths.
- */
-function commonPrefix(paths) {
-  if (paths.length === 0) return '/';
-  const split = paths.map(p => p.split('/'));
-  const first = split[0];
-  let i = 0;
-  while (i < first.length) {
-    if (split.every(s => s[i] === first[i])) i++;
-    else break;
+async function ensureHomeRoot() {
+  if (homeRoot) return homeRoot;
+  try {
+    homeRoot = await invoke('get_home_dir');
+  } catch (err) {
+    console.error('Failed to get home dir:', err);
+    homeRoot = null;
   }
-  // Ensure we stop at a directory, not mid-filename
-  const common = first.slice(0, i).join('/');
-  // If common is a file path (matches one of the inputs), go up one level
-  if (paths.includes(common)) {
-    return common.substring(0, common.lastIndexOf('/')) || '/';
-  }
-  return common || '/';
+  return homeRoot;
 }
 
-/**
- * Build a recursive folder tree from a flat list of paths.
- * Uses the longest common directory prefix as root.
- */
-function buildFolderTree(entries) {
-  const paths = entries.map(e => e.path);
-  const prefix = commonPrefix(paths.map(p => p.substring(0, p.lastIndexOf('/'))));
-
-  const tree = {};
-
-  for (const entry of entries) {
-    const relativePath = entry.path.substring(prefix.length + 1);
-    const segments = relativePath.split('/');
-    let current = tree;
-    for (let i = 0; i < segments.length - 1; i++) {
-      const seg = segments[i];
-      if (!current[seg]) current[seg] = { __children: {} };
-      current = current[seg].__children;
-    }
-    const fileName = segments[segments.length - 1];
-    current[fileName] = { __file: entry.path };
+async function loadDir(path) {
+  if (dirCache.has(path)) return dirCache.get(path);
+  if (loadingPaths.has(path)) return null;
+  loadingPaths.add(path);
+  try {
+    const entries = await invoke('list_directory', { path });
+    dirCache.set(path, entries);
+    return entries;
+  } catch (err) {
+    console.error(`Failed to list ${path}:`, err);
+    dirCache.set(path, []);
+    return [];
+  } finally {
+    loadingPaths.delete(path);
   }
-
-  // Compact single-child directories into "parent/child" nodes
-  function compact(node) {
-    for (const [key, value] of Object.entries(node)) {
-      if (!value.__children) continue;
-      compact(value.__children);
-      const childKeys = Object.keys(value.__children);
-      // If this dir has exactly one child and it's also a dir, merge them
-      if (childKeys.length === 1) {
-        const childKey = childKeys[0];
-        const childValue = value.__children[childKey];
-        if (childValue.__children) {
-          const merged = `${key}/${childKey}`;
-          node[merged] = childValue;
-          delete node[key];
-        }
-      }
-    }
-  }
-  compact(tree);
-
-  return { root: prefix, tree };
 }
 
-function renderTree(tree, container, collapsed, pinnedSet, parentPath) {
-  const pathPrefix = parentPath || '';
-  const entries = Object.entries(tree).sort(([a, va], [b, vb]) => {
-    const aIsDir = va.__children !== undefined;
-    const bIsDir = vb.__children !== undefined;
-    if (aIsDir && !bIsDir) return -1;
-    if (!aIsDir && bIsDir) return 1;
-    return a.localeCompare(b);
+function makeFileNode(entry, pinnedSet) {
+  const el = document.createElement('div');
+  el.className = 'tree-file';
+  el.textContent = `📄 ${entry.name}`;
+  el.title = entry.path;
+  el.addEventListener('click', () => {
+    if (onFileClick) onFileClick(entry.path);
+  });
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const isPinned = pinnedSet && pinnedSet.has(entry.path);
+    const menu = createContextMenu(entry.path, isPinned);
+    menu.style.left = `${e.clientX}px`;
+    menu.style.top = `${e.clientY}px`;
+  });
+  return el;
+}
+
+function makeDirNode(entry, pinnedSet, pinnedDirsSet, options = {}) {
+  const { showUnpin = false } = options;
+
+  const dir = document.createElement('div');
+  dir.className = 'tree-dir';
+
+  const header = document.createElement('div');
+  header.className = 'tree-dir-header';
+  header.title = entry.path;
+  const label = document.createElement('span');
+  header.appendChild(label);
+
+  const children = document.createElement('div');
+  children.className = 'tree-children';
+
+  const setLabel = () => {
+    const expanded = expandedPaths.has(entry.path);
+    label.textContent = `${expanded ? '▼' : '▶'} 📂 ${entry.name}`;
+    children.style.display = expanded ? 'block' : 'none';
+  };
+  setLabel();
+
+  if (showUnpin) {
+    const refreshBtn = document.createElement('span');
+    refreshBtn.className = 'dir-refresh';
+    refreshBtn.textContent = '↻';
+    refreshBtn.title = 'Rafraîchir';
+    refreshBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      refreshBtn.classList.add('spinning');
+      invalidateDirCache(entry.path);
+      if (onRequestRefresh) await onRequestRefresh();
+    });
+    header.appendChild(refreshBtn);
+
+    const unpinBtn = document.createElement('span');
+    unpinBtn.className = 'file-unpin';
+    unpinBtn.textContent = '✕';
+    unpinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (onUnpinDir) onUnpinDir(entry.path);
+    });
+    header.appendChild(unpinBtn);
+  }
+
+  if (expandedPaths.has(entry.path)) {
+    if (dirCache.has(entry.path)) {
+      renderEntriesInto(dirCache.get(entry.path), children, pinnedSet, pinnedDirsSet);
+    } else {
+      children.innerHTML = '<div class="tree-loading">…</div>';
+      loadDir(entry.path).then((loaded) => {
+        if (!expandedPaths.has(entry.path)) return;
+        children.innerHTML = '';
+        renderEntriesInto(loaded || [], children, pinnedSet, pinnedDirsSet);
+      });
+    }
+  }
+
+  header.addEventListener('click', async () => {
+    if (expandedPaths.has(entry.path)) {
+      expandedPaths.delete(entry.path);
+      setLabel();
+      invoke('unwatch_dir', { path: entry.path }).catch(() => {});
+      return;
+    }
+    expandedPaths.add(entry.path);
+    setLabel();
+    invoke('watch_dir', { path: entry.path }).catch(() => {});
+    if (!dirCache.has(entry.path)) {
+      children.innerHTML = '<div class="tree-loading">…</div>';
+      const loaded = await loadDir(entry.path);
+      if (!expandedPaths.has(entry.path)) return;
+      children.innerHTML = '';
+      renderEntriesInto(loaded || [], children, pinnedSet, pinnedDirsSet);
+    }
   });
 
-  for (const [name, value] of entries) {
-    if (value.__file) {
-      // File entry
-      const el = document.createElement('div');
-      el.className = 'tree-file';
-      el.textContent = `📄 ${name}`;
-      el.title = value.__file;
-      el.addEventListener('click', () => {
-        if (onFileClick) onFileClick(value.__file);
-      });
-      el.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const isPinned = pinnedSet && pinnedSet.has(value.__file);
-        const menu = createContextMenu(value.__file, isPinned);
-        menu.style.left = `${e.clientX}px`;
-        menu.style.top = `${e.clientY}px`;
-      });
-      container.appendChild(el);
-    } else if (value.__children) {
-      // Directory entry
-      const dir = document.createElement('div');
-      dir.className = 'tree-dir';
+  header.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const isPinned = pinnedDirsSet && pinnedDirsSet.has(entry.path);
+    const menu = createContextMenu(entry.path, isPinned, true);
+    menu.style.left = `${e.clientX}px`;
+    menu.style.top = `${e.clientY}px`;
+  });
 
-      const header = document.createElement('div');
-      header.className = 'tree-dir-header';
-      const key = `${pathPrefix}/${name}`;
-      const isCollapsed = collapsed.has(key);
-      header.textContent = `${isCollapsed ? '▶' : '▼'} 📂 ${name}`;
-      header.addEventListener('click', () => {
-        if (collapsed.has(key)) {
-          collapsed.delete(key);
-        } else {
-          collapsed.add(key);
-        }
-        const childContainer = dir.querySelector('.tree-children');
-        if (childContainer) {
-          childContainer.style.display = collapsed.has(key) ? 'none' : 'block';
-          header.textContent = `${collapsed.has(key) ? '▶' : '▼'} 📂 ${name}`;
-        }
-      });
-      dir.appendChild(header);
+  dir.appendChild(header);
+  dir.appendChild(children);
+  return dir;
+}
 
-      const children = document.createElement('div');
-      children.className = 'tree-children';
-      children.style.display = isCollapsed ? 'none' : 'block';
-      renderTree(value.__children, children, collapsed, pinnedSet, key);
-      dir.appendChild(children);
-
-      container.appendChild(dir);
+function renderEntriesInto(entries, container, pinnedSet, pinnedDirsSet) {
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-empty';
+    empty.textContent = '(vide)';
+    container.appendChild(empty);
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.is_dir) {
+      container.appendChild(makeDirNode(entry, pinnedSet, pinnedDirsSet));
+    } else {
+      container.appendChild(makeFileNode(entry, pinnedSet));
     }
   }
 }
 
-// Track collapsed folders across renders
-const collapsedFolders = new Set();
+async function renderHomeSection(container, pinnedSet, pinnedDirsSet) {
+  const section = document.createElement('div');
+  section.className = 'sidebar-section';
+
+  const header = document.createElement('div');
+  header.className = 'sidebar-section-header';
+  header.innerHTML = '🏠 Home';
+  section.appendChild(header);
+
+  const treeContainer = document.createElement('div');
+  treeContainer.className = 'sidebar-tree';
+  section.appendChild(treeContainer);
+  container.appendChild(section);
+
+  const root = await ensureHomeRoot();
+  if (!root) {
+    treeContainer.innerHTML = '<div class="tree-empty">(home indisponible)</div>';
+    return;
+  }
+  header.title = root;
+  invoke('watch_dir', { path: root }).catch(() => {});
+
+  let entries = dirCache.get(root);
+  if (!entries) {
+    treeContainer.innerHTML = '<div class="tree-loading">…</div>';
+    entries = await loadDir(root);
+    treeContainer.innerHTML = '';
+  }
+  renderEntriesInto(entries || [], treeContainer, pinnedSet, pinnedDirsSet);
+}
 
 export function renderSidebar(container, history, activeFile) {
   container.innerHTML = '';
 
-  // Section 1: Pinned
-  if (history.pinned.length > 0) {
+  const pinnedDirs = history.pinned_dirs || [];
+  const pinnedSet = new Set(history.pinned);
+  const pinnedDirsSet = new Set(pinnedDirs);
+
+  // Section 1: Pinned (dirs first, then files)
+  const totalPinned = history.pinned.length + pinnedDirs.length;
+  if (totalPinned > 0) {
     const section = document.createElement('div');
     section.className = 'sidebar-section';
 
     const header = document.createElement('div');
     header.className = 'sidebar-section-header';
-    header.innerHTML = `📌 Épinglés <span class="section-count">${history.pinned.length}</span>`;
+    header.innerHTML = `📌 Épinglés <span class="section-count">${totalPinned}</span>`;
     section.appendChild(header);
 
     const list = document.createElement('div');
     list.className = 'sidebar-section-list';
+    for (const dirPath of pinnedDirs) {
+      const name = dirPath.split('/').pop() || dirPath;
+      list.appendChild(
+        makeDirNode(
+          { name, path: dirPath, is_dir: true },
+          pinnedSet,
+          pinnedDirsSet,
+          { showUnpin: true }
+        )
+      );
+    }
     for (const path of history.pinned) {
       list.appendChild(renderFileItem(path, { showUnpin: true, showContext: true }));
     }
@@ -319,32 +424,6 @@ export function renderSidebar(container, history, activeFile) {
     container.appendChild(section);
   }
 
-  // Section 3: By Folder (all entries, not limited to 10)
-  const allEntries = [...history.entries];
-  if (allEntries.length > 0) {
-    const { root, tree } = buildFolderTree(allEntries);
-    const section = document.createElement('div');
-    section.className = 'sidebar-section';
-
-    const header = document.createElement('div');
-    header.className = 'sidebar-section-header';
-    const rootName = root.split('/').pop() || root;
-    header.innerHTML = `📂 ${rootName} <span class="section-count" title="${root}">${allEntries.length}</span>`;
-    section.appendChild(header);
-
-    const treeContainer = document.createElement('div');
-    treeContainer.className = 'sidebar-tree';
-    const pinnedSet = new Set(history.pinned);
-    renderTree(tree, treeContainer, collapsedFolders, pinnedSet);
-    section.appendChild(treeContainer);
-    container.appendChild(section);
-  }
-
-  // Empty state
-  if (history.entries.length === 0 && history.pinned.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'sidebar-empty';
-    empty.textContent = 'Aucun fichier ouvert récemment';
-    container.appendChild(empty);
-  }
+  // Section 3: Home browser (lazy, filtered to .md files)
+  renderHomeSection(container, pinnedSet, pinnedDirsSet);
 }
