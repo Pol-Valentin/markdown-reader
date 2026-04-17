@@ -12,6 +12,34 @@ pub fn read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn read_image_as_data_url(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let bytes = std::fs::read(&path).map_err(|e| format!("Failed to read image: {e}"))?;
+
+    // Infer MIME type from extension
+    let mime = match std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
+        Some("avif") => "image/avif",
+        _ => "application/octet-stream",
+    };
+
+    let encoded = general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+#[tauri::command]
 pub fn get_history() -> History {
     History::load()
 }

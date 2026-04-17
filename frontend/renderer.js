@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import katex from 'katex';
+import { invoke } from '@tauri-apps/api/core';
 
 // Configure marked with GFM and highlight.js
 marked.setOptions({
@@ -11,6 +12,13 @@ marked.setOptions({
 
 // Custom renderer for code blocks
 const renderer = new marked.Renderer();
+
+renderer.image = function ({ href, title, text }) {
+  const altText = text || '';
+  const titleAttr = title ? ` title="${title.replace(/"/g, '&quot;')}"` : '';
+  // Mark href for post-processing; keep original so we can resolve relative paths
+  return `<img data-src="${href}" alt="${altText.replace(/"/g, '&quot;')}"${titleAttr}>`;
+};
 
 renderer.code = function ({ text, lang }) {
   // Mermaid blocks are handled separately
@@ -106,6 +114,62 @@ export function generateTOC(content) {
 export function renderMarkdown(content) {
   const stripped = stripFrontMatter(content);
   return marked.parse(stripped);
+}
+
+/**
+ * Resolve image sources in rendered content.
+ * - Absolute URLs (http/https/data/file) are passed through
+ * - Relative paths are resolved against the markdown file's directory
+ *   and loaded as data URLs via the Tauri backend
+ */
+export async function resolveImages(container, currentFilePath) {
+  const images = container.querySelectorAll('img[data-src]');
+  if (images.length === 0) return;
+
+  const baseDir = currentFilePath
+    ? currentFilePath.substring(0, currentFilePath.lastIndexOf('/'))
+    : '';
+
+  for (const img of images) {
+    const src = img.getAttribute('data-src');
+    img.removeAttribute('data-src');
+
+    if (!src) continue;
+
+    // Pass through remote/data/file URLs
+    if (/^(https?:|data:|file:)/.test(src)) {
+      img.src = src;
+      continue;
+    }
+
+    // Resolve absolute or relative local paths
+    let absolutePath;
+    if (src.startsWith('/')) {
+      absolutePath = src;
+    } else if (baseDir) {
+      absolutePath = `${baseDir}/${src}`;
+    } else {
+      img.alt = `${img.alt || ''} (image path cannot be resolved: ${src})`;
+      continue;
+    }
+
+    // Normalize "../" and "./"
+    const parts = absolutePath.split('/');
+    const normalized = [];
+    for (const part of parts) {
+      if (part === '..') normalized.pop();
+      else if (part !== '.' && part !== '') normalized.push(part);
+    }
+    absolutePath = '/' + normalized.join('/');
+
+    try {
+      const dataUrl = await invoke('read_image_as_data_url', { path: absolutePath });
+      img.src = dataUrl;
+    } catch (err) {
+      console.warn(`Failed to load image ${absolutePath}:`, err);
+      img.alt = `${img.alt || ''} (image not found: ${src})`;
+    }
+  }
 }
 
 /**

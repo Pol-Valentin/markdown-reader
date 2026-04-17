@@ -74,6 +74,7 @@ pub fn run_with_args(args: Vec<String>) {
         })
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
+            commands::read_image_as_data_url,
             commands::get_history,
             commands::record_open,
             commands::pin_file,
