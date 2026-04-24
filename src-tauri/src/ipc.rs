@@ -9,8 +9,14 @@ const PING_MSG: &str = "__ping__";
 const PONG_MSG: &str = "__pong__";
 
 pub fn socket_path(workspace_id: u32) -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+    // Cross-platform: XDG on Linux, TMPDIR on macOS (set by default) and others.
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| {
+        if cfg!(target_os = "linux") {
+            format!("/run/user/{}", unsafe { libc::getuid() })
+        } else {
+            std::env::temp_dir().to_string_lossy().into_owned()
+        }
+    });
     PathBuf::from(runtime_dir).join(format!("md-reader-ws-{workspace_id}.sock"))
 }
 

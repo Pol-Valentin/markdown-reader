@@ -8,6 +8,11 @@ import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { tmpdir } from 'os'
+
+// Cross-platform runtime dir: XDG on Linux, TMPDIR on macOS/others
+const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR
+  ?? (process.platform === 'linux' ? `/run/user/${process.getuid()}` : tmpdir())
 
 // Resolve path to the markdown-reader binary (sibling to channel/ dir)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -18,8 +23,7 @@ const SESSION_ID = randomUUID()
 
 // Write session ID to a known file so statusline can read it
 import { writeFileSync, unlinkSync } from 'fs'
-const runtimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`
-const sessionFile = `${runtimeDir}/md-reader-channel-${process.pid}.session`
+const sessionFile = `${RUNTIME_DIR}/md-reader-channel-${process.pid}.session`
 writeFileSync(sessionFile, `${SESSION_ID}\n${process.ppid}`)
 process.on('exit', () => { try { unlinkSync(sessionFile) } catch {} })
 
@@ -40,8 +44,7 @@ function getWorkspaceId(): number {
 
 // --- Socket path ---
 function getSocketPath(workspaceId: number): string {
-  const runtimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`
-  return `${runtimeDir}/md-reader-ws-${workspaceId}.sock`
+  return `${RUNTIME_DIR}/md-reader-ws-${workspaceId}.sock`
 }
 
 // --- Ensure Reader GUI is running ---
