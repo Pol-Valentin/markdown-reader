@@ -111,6 +111,26 @@ body {
   flex-shrink: 0;
 }
 
+/* === macOS integration: overlay title bar, traffic lights sit on sidebar === */
+body.is-mac #sidebar {
+  padding-top: 44px;
+}
+body.is-mac #tab-bar {
+  -webkit-app-region: drag;
+  min-height: 44px;
+  align-items: center;
+}
+body.is-mac #tab-bar button,
+body.is-mac #tab-bar .tab,
+body.is-mac #tab-bar a,
+body.is-mac #tab-bar input {
+  -webkit-app-region: no-drag;
+}
+/* When sidebar is hidden on macOS, push tab-bar content past traffic lights */
+body.is-mac.sidebar-hidden #tab-bar {
+  padding-left: 78px;
+}
+
 /* Sidebar toggle — first element in tab bar */
 #sidebar-toggle {
   background: none;

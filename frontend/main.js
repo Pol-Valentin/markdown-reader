@@ -244,6 +244,11 @@ document.addEventListener('click', (e) => {
 
 // --- Init ---
 
+// Platform-specific body class (macOS needs padding for traffic lights)
+if (/Mac|iPhone|iPad/.test(navigator.platform)) {
+  document.body.classList.add('is-mac');
+}
+
 async function init() {
   await refreshSidebar();
   refreshTabBar();
