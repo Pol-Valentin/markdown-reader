@@ -31,3 +31,14 @@ base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
+
+[patch.crates-io]
+wry = { path = "../vendor/wry" }
+
+[profile.release]
+# Workaround for macOS 26 Tahoe: WKWebView fails to render in release builds
+# unless a debug_assertions-gated code path is active in objc2 / wry.
+# Root cause not fully pinpointed; enabling debug-assertions in release is the
+# smallest effective workaround until upstream investigates.
+debug-assertions = true
+
