@@ -1,0 +1,11 @@
+{
+  "name": "markdown-reader",
+  "version": "1.0.0",
+  "description": "Open Markdown files in the Markdown Reader app with live reload, Mermaid rendering, and inline comments back to Claude.",
+  "author": {
+    "name": "Pol-Valentin Cami",
+    "email": "polvalentin@evaneos.com"
+  },
+  "homepage": "https://github.com/Pol-Valentin/markdown-reader",
+  "license": "ISC"
+}
