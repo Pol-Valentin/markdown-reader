@@ -22,10 +22,19 @@ const READER_BINARY = resolve(__dirname, '../src-tauri/target/release/markdown-r
 const SESSION_ID = randomUUID()
 
 // Write session ID to a known file so statusline can read it
-import { writeFileSync, unlinkSync } from 'fs'
+import { writeFileSync, unlinkSync, appendFileSync } from 'fs'
 const sessionFile = `${RUNTIME_DIR}/md-reader-channel-${process.pid}.session`
 writeFileSync(sessionFile, `${SESSION_ID}\n${process.ppid}`)
 process.on('exit', () => { try { unlinkSync(sessionFile) } catch {} })
+
+// --- Side-channel events file: workaround for stream-json mode dropping channel notifications.
+// In Claude Desktop, claude.real receives notifications/claude/channel but never emits <channel>
+// events on its stream-json output. A wrapper proxy reads this file and injects events as
+// synthetic user messages into claude.real's stdin. Scoped by ppid (= claude.real PID) so multiple
+// parallel sessions don't cross-pollute. In CLI / interactive mode no wrapper reads this file —
+// it's a harmless orphan written briefly and removed on process exit.
+const eventsFile = `${RUNTIME_DIR}/claude-channel-events-${process.ppid}.jsonl`
+process.on('exit', () => { try { unlinkSync(eventsFile) } catch {} })
 
 // --- Workspace detection ---
 function getWorkspaceId(): number {
@@ -230,20 +239,26 @@ async function connectToSocket(_workspaceId: number, socketPath: string) {
         const json = line.slice('comment:'.length)
         try {
           const comment = JSON.parse(json)
-          // Forward to Claude Code as a channel notification
+          const meta = {
+            file: comment.file,
+            heading: comment.heading,
+            selected_text: comment.selected_text,
+            content_type: comment.content_type,
+            session_id: comment.session_id,
+          }
+          // Forward to Claude Code as a channel notification (works in interactive CLI mode)
           mcp.notification({
             method: 'notifications/claude/channel',
-            params: {
-              content: comment.comment,
-              meta: {
-                file: comment.file,
-                heading: comment.heading,
-                selected_text: comment.selected_text,
-                content_type: comment.content_type,
-                session_id: comment.session_id,
-              },
-            },
+            params: { content: comment.comment, meta },
           })
+          // Also write to side-channel events file (read by wrapper proxy in stream-json mode).
+          // Harmless no-op when no wrapper is reading.
+          try {
+            appendFileSync(
+              eventsFile,
+              JSON.stringify({ source: 'markdown-reader', content: comment.comment, meta }) + '\n',
+            )
+          } catch {}
         } catch (err) {
           // Ignore malformed JSON
         }
