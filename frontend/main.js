@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { renderMarkdown, renderMermaidDiagrams, resolveImages, generateTOC } from './renderer.js';
 import { openTab, closeTab, getActiveTab, getTabs, setOnTabChange, renderTabBar } from './tabs.js';
 import { renderSidebar, setCallbacks as setSidebarCallbacks, invalidateDir } from './sidebar.js';
@@ -199,16 +200,28 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 
 // --- Sidebar toggle ---
 const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarShowFloating = document.getElementById('sidebar-show-floating');
 
-sidebarToggle.addEventListener('click', () => {
+function applySidebarState() {
+  // Icons are static SVGs; only titles need updating per state.
+  sidebarToggle.title = 'Masquer la sidebar';
+  sidebarShowFloating.title = 'Afficher la sidebar';
+}
+
+function toggleSidebar() {
   const hidden = !document.body.classList.contains('sidebar-hidden');
   document.body.classList.toggle('sidebar-hidden', hidden);
   localStorage.setItem('sidebarHidden', hidden);
-});
+  applySidebarState();
+}
+
+sidebarToggle.addEventListener('click', toggleSidebar);
+sidebarShowFloating.addEventListener('click', toggleSidebar);
 
 if (localStorage.getItem('sidebarHidden') === 'true') {
   document.body.classList.add('sidebar-hidden');
 }
+applySidebarState();
 
 // --- Width toggle ---
 const widthToggle = document.getElementById('width-toggle');
@@ -247,6 +260,39 @@ document.addEventListener('click', (e) => {
 // Platform-specific body class (macOS needs padding for traffic lights)
 if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   document.body.classList.add('is-mac');
+
+  // Move sidebar toggle into the sidebar header (right after the traffic lights
+  // spacer). Normal flow — vertically centered with the traffic lights.
+  const sidebarHeader = document.getElementById('sidebar-header');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (sidebarHeader && toggle) sidebarHeader.appendChild(toggle);
+
+  // JS-driven drag — data-tauri-drag-region alone doesn't fire on this setup
+  // (transparent + windowEffects breaks native drag detection). Bubble-phase
+  // mousedown attached per drag-region element. Works without focus only;
+  // dragging when focused is a known Tauri/macOS limitation (issue #11605).
+  const appWindow = getCurrentWindow();
+  function attachDragHandler(el) {
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, input, a, select, textarea, .tab, .tab-close')) return;
+      if (e.detail >= 2) {
+        appWindow.toggleMaximize().catch(() => {});
+        return;
+      }
+      appWindow.startDragging().catch(() => {});
+    });
+  }
+  document.querySelectorAll('[data-tauri-drag-region]').forEach(attachDragHandler);
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches?.('[data-tauri-drag-region]')) attachDragHandler(node);
+        node.querySelectorAll?.('[data-tauri-drag-region]').forEach(attachDragHandler);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 async function init() {
