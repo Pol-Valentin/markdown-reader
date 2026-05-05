@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { renderMarkdown, renderMermaidDiagrams, resolveImages, generateTOC } from './renderer.js';
 import { openTab, closeTab, getActiveTab, getTabs, setOnTabChange, renderTabBar } from './tabs.js';
 import { renderSidebar, setCallbacks as setSidebarCallbacks, invalidateDir } from './sidebar.js';
@@ -267,21 +266,19 @@ if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   const toggle = document.getElementById('sidebar-toggle');
   if (sidebarHeader && toggle) sidebarHeader.appendChild(toggle);
 
-  // JS-driven drag — data-tauri-drag-region alone doesn't fire on this setup
-  // (transparent + windowEffects breaks native drag detection). Bubble-phase
-  // mousedown attached per drag-region element. Works without focus only;
-  // dragging when focused is a known Tauri/macOS limitation (issue #11605).
-  const appWindow = getCurrentWindow();
+  // Native drag via NSWindow.movableByWindowBackground, scoped to drag regions.
+  // Hovering a [data-tauri-drag-region] enables it; leaving disables it. tao's
+  // sendEvent override then calls performWindowDragWithEvent synchronously on
+  // LeftMouseDown — works whether or not the window is focused.
+  let movableState = false;
+  function setMovable(movable) {
+    if (movable === movableState) return;
+    movableState = movable;
+    invoke('set_window_movable', { movable }).catch(() => {});
+  }
   function attachDragHandler(el) {
-    el.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest('button, input, a, select, textarea, .tab, .tab-close')) return;
-      if (e.detail >= 2) {
-        appWindow.toggleMaximize().catch(() => {});
-        return;
-      }
-      appWindow.startDragging().catch(() => {});
-    });
+    el.addEventListener('mouseenter', () => setMovable(true));
+    el.addEventListener('mouseleave', () => setMovable(false));
   }
   document.querySelectorAll('[data-tauri-drag-region]').forEach(attachDragHandler);
   new MutationObserver((mutations) => {

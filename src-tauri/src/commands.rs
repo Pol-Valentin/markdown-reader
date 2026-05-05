@@ -334,3 +334,30 @@ pub fn open_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to open URL: {e}"))?;
     Ok(())
 }
+
+/// Toggle whether the OS treats the window background as draggable.
+/// On macOS, when enabled, tao's NSWindow `sendEvent` override calls
+/// `performWindowDragWithEvent` synchronously on `LeftMouseDown`, which is
+/// the only reliable way to drag the window when it has focus. Frontend
+/// flips this on `mouseenter`/`mouseleave` of `[data-tauri-drag-region]`
+/// elements so non-titlebar areas keep normal click/text-selection behavior.
+#[tauri::command]
+pub fn set_window_movable(window: tauri::Window, movable: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let ns_window = window.ns_window().map_err(|e| e.to_string())?;
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        unsafe {
+            let _: () = msg_send![
+                ns_window as *mut AnyObject,
+                setMovableByWindowBackground: movable
+            ];
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, movable);
+    }
+    Ok(())
+}
