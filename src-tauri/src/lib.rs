@@ -94,6 +94,7 @@ pub fn run_with_args(args: Vec<String>) {
             commands::send_comment,
             commands::get_sessions,
             commands::open_url,
+            commands::set_window_movable,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -104,6 +105,7 @@ pub fn run_with_args(args: Vec<String>) {
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     let _ = window.set_icon(icon);
                 }
+
             }
 
             // Set up file watcher that emits events to frontend

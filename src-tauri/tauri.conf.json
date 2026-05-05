@@ -9,6 +9,7 @@
     "beforeDevCommand": "npm run dev"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Markdown Reader",
@@ -20,7 +21,12 @@
         "fullscreen": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 14, "y": 18 }
+        "trafficLightPosition": { "x": 22, "y": 27 },
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["sidebar"],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {

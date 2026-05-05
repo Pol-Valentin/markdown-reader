@@ -362,7 +362,10 @@ async function renderHomeSection(container, pinnedSet, pinnedDirsSet) {
 }
 
 export function renderSidebar(container, history, activeFile) {
+  // Preserve the macOS sidebar header (drag region + traffic-lights spacer + toggle)
+  const header = container.querySelector('#sidebar-header');
   container.innerHTML = '';
+  if (header) container.appendChild(header);
 
   const pinnedDirs = history.pinned_dirs || [];
   const pinnedSet = new Set(history.pinned);

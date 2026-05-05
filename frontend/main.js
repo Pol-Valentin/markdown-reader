@@ -199,16 +199,28 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
 
 // --- Sidebar toggle ---
 const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarShowFloating = document.getElementById('sidebar-show-floating');
 
-sidebarToggle.addEventListener('click', () => {
+function applySidebarState() {
+  // Icons are static SVGs; only titles need updating per state.
+  sidebarToggle.title = 'Masquer la sidebar';
+  sidebarShowFloating.title = 'Afficher la sidebar';
+}
+
+function toggleSidebar() {
   const hidden = !document.body.classList.contains('sidebar-hidden');
   document.body.classList.toggle('sidebar-hidden', hidden);
   localStorage.setItem('sidebarHidden', hidden);
-});
+  applySidebarState();
+}
+
+sidebarToggle.addEventListener('click', toggleSidebar);
+sidebarShowFloating.addEventListener('click', toggleSidebar);
 
 if (localStorage.getItem('sidebarHidden') === 'true') {
   document.body.classList.add('sidebar-hidden');
 }
+applySidebarState();
 
 // --- Width toggle ---
 const widthToggle = document.getElementById('width-toggle');
@@ -247,6 +259,37 @@ document.addEventListener('click', (e) => {
 // Platform-specific body class (macOS needs padding for traffic lights)
 if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   document.body.classList.add('is-mac');
+
+  // Move sidebar toggle into the sidebar header (right after the traffic lights
+  // spacer). Normal flow — vertically centered with the traffic lights.
+  const sidebarHeader = document.getElementById('sidebar-header');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (sidebarHeader && toggle) sidebarHeader.appendChild(toggle);
+
+  // Native drag via NSWindow.movableByWindowBackground, scoped to drag regions.
+  // Hovering a [data-tauri-drag-region] enables it; leaving disables it. tao's
+  // sendEvent override then calls performWindowDragWithEvent synchronously on
+  // LeftMouseDown — works whether or not the window is focused.
+  let movableState = false;
+  function setMovable(movable) {
+    if (movable === movableState) return;
+    movableState = movable;
+    invoke('set_window_movable', { movable }).catch(() => {});
+  }
+  function attachDragHandler(el) {
+    el.addEventListener('mouseenter', () => setMovable(true));
+    el.addEventListener('mouseleave', () => setMovable(false));
+  }
+  document.querySelectorAll('[data-tauri-drag-region]').forEach(attachDragHandler);
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches?.('[data-tauri-drag-region]')) attachDragHandler(node);
+        node.querySelectorAll?.('[data-tauri-drag-region]').forEach(attachDragHandler);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 async function init() {
