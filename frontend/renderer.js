@@ -177,6 +177,26 @@ export async function resolveImages(container, currentFilePath) {
  * Lazy-loads mermaid only if needed.
  */
 let mermaidLoaded = false;
+let mermaidSandbox = null;
+
+function getMermaidSandbox() {
+  if (mermaidSandbox && mermaidSandbox.isConnected) return mermaidSandbox;
+  mermaidSandbox = document.createElement('div');
+  mermaidSandbox.id = 'mermaid-sandbox';
+  mermaidSandbox.style.cssText =
+    'position:absolute;left:-100000px;top:-100000px;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;';
+  document.body.appendChild(mermaidSandbox);
+  return mermaidSandbox;
+}
+
+function cleanupMermaidOrphans() {
+  // Mermaid v11 leaves <div id="dmermaid-*"> and orphan SVGs in body on parse error.
+  document.querySelectorAll('body > div[id^="dmermaid-"], body > div[id^="dmermaid_"]').forEach((n) => n.remove());
+  document.querySelectorAll('body > svg[id^="mermaid-"], body > svg[aria-roledescription]').forEach((n) => {
+    if (n.parentElement === document.body) n.remove();
+  });
+}
+
 export async function renderMermaidDiagrams(container) {
   const mermaidElements = container.querySelectorAll('.mermaid');
   if (mermaidElements.length === 0) return;
@@ -187,20 +207,25 @@ export async function renderMermaidDiagrams(container) {
       startOnLoad: false,
       theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
       securityLevel: 'loose',
+      suppressErrorRendering: true,
     });
     window.__mermaid = mermaid.default;
     mermaidLoaded = true;
   }
 
-  // Re-render mermaid diagrams
+  const sandbox = getMermaidSandbox();
+
   for (let i = 0; i < mermaidElements.length; i++) {
     const el = mermaidElements[i];
     const code = el.textContent;
     try {
-      const { svg } = await window.__mermaid.render(`mermaid-${Date.now()}-${i}`, code);
+      const { svg } = await window.__mermaid.render(`mermaid-${Date.now()}-${i}`, code, sandbox);
       el.innerHTML = svg;
     } catch (err) {
       el.innerHTML = `<pre class="mermaid-error">Mermaid error: ${err.message}</pre>`;
     }
   }
+
+  sandbox.innerHTML = '';
+  cleanupMermaidOrphans();
 }
