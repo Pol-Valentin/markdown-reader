@@ -4,6 +4,15 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+// Test-only override of the data directory. Thread-local so parallel tests stay
+// isolated (unlike a global env var). `dirs::data_dir()` ignores XDG_DATA_HOME on
+// macOS, so the previous env-based approach silently leaked into the real history.
+#[cfg(test)]
+thread_local! {
+    static DATA_DIR_OVERRIDE: std::cell::RefCell<Option<PathBuf>> =
+        std::cell::RefCell::new(None);
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub path: String,
@@ -22,6 +31,12 @@ pub struct History {
 
 impl History {
     fn data_dir() -> PathBuf {
+        #[cfg(test)]
+        {
+            if let Some(dir) = DATA_DIR_OVERRIDE.with(|d| d.borrow().clone()) {
+                return dir;
+            }
+        }
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("~/.local/share"))
             .join("markdown-reader")
@@ -145,12 +160,13 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     fn with_temp_data_dir<F: FnOnce()>(f: F) {
         let tmp = tempfile::tempdir().unwrap();
-        env::set_var("XDG_DATA_HOME", tmp.path());
+        DATA_DIR_OVERRIDE.with(|d| *d.borrow_mut() = Some(tmp.path().to_path_buf()));
         f();
+        DATA_DIR_OVERRIDE.with(|d| *d.borrow_mut() = None);
+        // tmp is dropped here, removing the temporary directory.
     }
 
     #[test]
