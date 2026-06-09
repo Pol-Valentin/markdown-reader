@@ -14,6 +14,63 @@ pub struct AppState {
     pub dir_watcher: Mutex<Option<watcher::DirWatcher>>,
     pub subscribers: ipc::SubscriberMap,
     pub session_registry: ipc::SessionRegistry,
+    /// Opens that arrived (via IPC or macOS Apple Events) before the webview
+    /// finished registering its listeners. Drained once the frontend is ready.
+    pub open_queue: Mutex<OpenQueue>,
+}
+
+/// A file-open request waiting to be delivered to the frontend.
+pub struct PendingOpen {
+    pub path: String,
+    pub session_id: Option<String>,
+}
+
+/// Queue + readiness flag, guarded together so delivery and draining are atomic.
+#[derive(Default)]
+pub struct OpenQueue {
+    pub ready: bool,
+    pub pending: Vec<PendingOpen>,
+}
+
+/// Emit the right open event to the webview and bring the window forward.
+fn emit_open(handle: &tauri::AppHandle, path: &str, session_id: Option<&str>) {
+    match session_id {
+        Some(sid) => {
+            #[derive(serde::Serialize, Clone)]
+            struct OpenFilePayload {
+                path: String,
+                session_id: String,
+            }
+            let _ = handle.emit(
+                "open-file-session",
+                OpenFilePayload {
+                    path: path.to_string(),
+                    session_id: sid.to_string(),
+                },
+            );
+        }
+        None => {
+            let _ = handle.emit("open-file", path.to_string());
+        }
+    }
+    if let Some(window) = handle.webview_windows().values().next() {
+        let _ = window.set_focus();
+    }
+}
+
+/// Deliver a file-open request. If the frontend is ready, emit immediately;
+/// otherwise queue it so the frontend can drain it once its listeners exist.
+/// This closes the cold-start race where the IPC socket binds (and the channel
+/// pushes an `open:`) before `main.js` has registered its event listeners.
+pub fn deliver_open(handle: &tauri::AppHandle, path: String, session_id: Option<String>) {
+    let state = handle.state::<AppState>();
+    let mut q = state.open_queue.lock().unwrap();
+    if q.ready {
+        drop(q);
+        emit_open(handle, &path, session_id.as_deref());
+    } else {
+        q.pending.push(PendingOpen { path, session_id });
+    }
 }
 
 pub fn run() {
@@ -73,6 +130,7 @@ pub fn run_with_args(args: Vec<String>) {
             dir_watcher: Mutex::new(None),
             subscribers: subscribers.clone(),
             session_registry: session_registry.clone(),
+            open_queue: Mutex::new(OpenQueue::default()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
@@ -95,6 +153,7 @@ pub fn run_with_args(args: Vec<String>) {
             commands::get_sessions,
             commands::open_url,
             commands::set_window_movable,
+            commands::frontend_ready,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -145,21 +204,10 @@ pub fn run_with_args(args: Vec<String>) {
                         while let Some(msg) = rx.recv().await {
                             match msg {
                                 ipc::IpcMessage::OpenFile(path) => {
-                                    let _ = ipc_handle.emit("open-file", path);
-                                    if let Some(window) = ipc_handle.webview_windows().values().next() {
-                                        let _ = window.set_focus();
-                                    }
+                                    deliver_open(&ipc_handle, path, None);
                                 }
                                 ipc::IpcMessage::OpenFileWithSession { session_id, path } => {
-                                    #[derive(serde::Serialize, Clone)]
-                                    struct OpenFilePayload {
-                                        path: String,
-                                        session_id: String,
-                                    }
-                                    let _ = ipc_handle.emit("open-file-session", OpenFilePayload { path, session_id });
-                                    if let Some(window) = ipc_handle.webview_windows().values().next() {
-                                        let _ = window.set_focus();
-                                    }
+                                    deliver_open(&ipc_handle, path, Some(session_id));
                                 }
                                 ipc::IpcMessage::SessionListChanged => {
                                     let _ = ipc_handle.emit("sessions-changed", ());
@@ -204,6 +252,20 @@ pub fn run_with_args(args: Vec<String>) {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS delivers files opened from Finder / `open` / drag-onto-icon
+            // as Apple Events surfaced here as RunEvent::Opened — NOT as argv.
+            // Route them through the same queue as IPC opens.
+            if let tauri::RunEvent::Opened { urls } = event {
+                for url in urls {
+                    let path = url
+                        .to_file_path()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| url.to_string());
+                    deliver_open(app_handle, path, None);
+                }
+            }
+        });
 }

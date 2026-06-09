@@ -262,6 +262,28 @@ pub fn get_initial_file(state: State<'_, AppState>) -> Option<String> {
     state.initial_file.lock().unwrap().take()
 }
 
+#[derive(Serialize)]
+pub struct PendingOpenPayload {
+    pub path: String,
+    pub session_id: Option<String>,
+}
+
+/// Mark the frontend as ready to receive open events and return any opens that
+/// queued up during startup (cold-start race fix). The frontend calls this once
+/// its event listeners are attached; from then on opens are emitted live.
+#[tauri::command]
+pub fn frontend_ready(state: State<'_, AppState>) -> Vec<PendingOpenPayload> {
+    let mut q = state.open_queue.lock().unwrap();
+    q.ready = true;
+    q.pending
+        .drain(..)
+        .map(|p| PendingOpenPayload {
+            path: p.path,
+            session_id: p.session_id,
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn watch_file(path: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut watcher = state.file_watcher.lock().unwrap();

@@ -108,15 +108,19 @@ setSidebarCallbacks({
 
 // --- Tauri events ---
 
-listen('open-file', async (event) => {
-  const path = event.payload;
-  openTab(path);
-});
-
-listen('open-file-session', async (event) => {
-  const { path, session_id } = event.payload;
-  openTab(path, session_id);
-});
+// Capture the registration promises so init() can guarantee these listeners
+// are attached before signalling readiness — otherwise an open emitted in the
+// gap between "ready" and "listener attached" would be lost.
+const openListenersReady = Promise.all([
+  listen('open-file', async (event) => {
+    const path = event.payload;
+    openTab(path);
+  }),
+  listen('open-file-session', async (event) => {
+    const { path, session_id } = event.payload;
+    openTab(path, session_id);
+  }),
+]);
 
 listen('file-changed', async (event) => {
   const changedPath = event.payload;
@@ -314,6 +318,18 @@ async function init() {
     const initialFile = await invoke('get_initial_file');
     if (initialFile) {
       openTab(initialFile);
+    }
+  } catch {}
+
+  // Signal readiness and drain any opens that arrived during startup (cold-start
+  // race: IPC `open:` from the channel, or macOS Finder Apple Events, can land
+  // before our listeners exist). Wait for the listeners first so live emits that
+  // follow are not lost.
+  try {
+    await openListenersReady;
+    const pending = await invoke('frontend_ready');
+    for (const { path, session_id } of pending) {
+      openTab(path, session_id || undefined);
     }
   } catch {}
 }

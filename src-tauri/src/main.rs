@@ -32,18 +32,24 @@ fn main() {
         }
     }
 
-    // Daemonize: fork and detach from terminal so the app runs independently
-    if !cfg!(debug_assertions) {
-        unsafe {
-            let pid = libc::fork();
-            if pid > 0 {
-                // Parent: exit immediately, returning control to the terminal
-                std::process::exit(0);
-            } else if pid == 0 {
-                // Child: create new session to detach from terminal
-                libc::setsid();
+    // Daemonize: fork and detach from terminal so the app runs independently.
+    // Linux only — on macOS the GUI is launched via LaunchServices / a detached
+    // spawn from the channel, and forking before the AppKit run loop starts can
+    // make the launch-time Apple Event (Finder "open file") miss this process.
+    #[cfg(target_os = "linux")]
+    {
+        if !cfg!(debug_assertions) {
+            unsafe {
+                let pid = libc::fork();
+                if pid > 0 {
+                    // Parent: exit immediately, returning control to the terminal
+                    std::process::exit(0);
+                } else if pid == 0 {
+                    // Child: create new session to detach from terminal
+                    libc::setsid();
+                }
+                // If fork fails (pid < 0), just continue in the current process
             }
-            // If fork fails (pid < 0), just continue in the current process
         }
     }
 
