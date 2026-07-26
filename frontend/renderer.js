@@ -20,11 +20,20 @@ renderer.image = function ({ href, title, text }) {
   return `<img data-src="${href}" alt="${altText.replace(/"/g, '&quot;')}"${titleAttr}>`;
 };
 
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 renderer.code = function ({ text, lang }) {
+  const escaped = escapeHtml(text);
+
   // Mermaid blocks are handled separately
   if (lang === 'mermaid') {
-    const escaped = text.replace(/"/g, '&quot;');
-    return `<div class="mermaid" data-source="${escaped}">${text}</div>`;
+    return `<div class="mermaid" data-source="${escaped}">${escaped}</div>`;
   }
 
   let highlighted;
@@ -33,8 +42,7 @@ renderer.code = function ({ text, lang }) {
   } else {
     highlighted = hljs.highlightAuto(text).value;
   }
-  const escapedCode = text.replace(/"/g, '&quot;');
-  return `<pre data-source="${escapedCode}"><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
+  return `<pre data-source="${escaped}"><code class="hljs language-${lang || 'plaintext'}">${highlighted}</code></pre>`;
 };
 
 marked.use({ renderer });
