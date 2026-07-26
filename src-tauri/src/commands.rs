@@ -8,26 +8,59 @@ use tauri::State;
 
 const FS_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
 
+fn in_flight() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static IN_FLIGHT: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    IN_FLIGHT.get_or_init(Default::default)
+}
+
 /// Runs blocking filesystem work off the IPC thread and gives up waiting after
 /// `timeout`. A stalled `open()` is uninterruptible — the worker thread stays
-/// parked until the kernel releases it, but the caller (the UI) is freed.
-fn with_deadline<T, F>(what: &str, timeout: std::time::Duration, f: F) -> Result<T, String>
+/// parked until the kernel releases it, but the caller (the UI) is freed. `key`
+/// is what bounds that leak: while one call is still parked, repeat calls for
+/// the same key fail fast instead of parking another thread (the file watcher
+/// re-reads the active tab on every event, which would pile them up).
+fn with_deadline<T, F>(key: String, timeout: std::time::Duration, f: F) -> Result<T, String>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    struct Release(String);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            if let Ok(mut set) = in_flight().lock() {
+                set.remove(&self.0);
+            }
+        }
+    }
+
+    if !in_flight()
+        .lock()
+        .map_or(true, |mut set| set.insert(key.clone()))
+    {
+        return Err(format!("{key}: still waiting on a previous attempt"));
+    }
     let (tx, rx) = std::sync::mpsc::channel();
+    let release = Release(key.clone());
     std::thread::spawn(move || {
+        let _release = release;
         let _ = tx.send(f());
     });
-    rx.recv_timeout(timeout)
-        .map_err(|_| format!("{what}: unresponsive after {:?}", timeout))
+    rx.recv_timeout(timeout).map_err(|e| match e {
+        std::sync::mpsc::RecvTimeoutError::Timeout => {
+            format!("{key}: unresponsive after {timeout:?}")
+        }
+        std::sync::mpsc::RecvTimeoutError::Disconnected => {
+            format!("{key}: worker thread died")
+        }
+    })
 }
 
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
-    with_deadline("read_file", FS_DEADLINE, move || {
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))
+    let read_path = path.clone();
+    with_deadline(format!("read_file {path}"), FS_DEADLINE, move || {
+        std::fs::read_to_string(&read_path).map_err(|e| format!("Failed to read file: {e}"))
     })?
 }
 
@@ -36,7 +69,7 @@ pub fn read_image_as_data_url(path: String) -> Result<String, String> {
     use base64::{engine::general_purpose, Engine as _};
 
     let read_path = path.clone();
-    let bytes = with_deadline("read_image", FS_DEADLINE, move || {
+    let bytes = with_deadline(format!("read_image {path}"), FS_DEADLINE, move || {
         std::fs::read(&read_path).map_err(|e| format!("Failed to read image: {e}"))
     })??;
 
@@ -126,7 +159,8 @@ fn should_skip_name(name: &str) -> bool {
 /// Mount points of volumes the kernel does not report as local (NFS, SMB, FUSE…).
 /// Read with `MNT_NOWAIT` so an unresponsive volume can never stall this call:
 /// the flags come from the kernel's mount table, the volumes are never touched.
-#[cfg(unix)]
+/// `getfsstat`/`MNT_LOCAL` are BSD-only; elsewhere `with_deadline` is the guard.
+#[cfg(target_os = "macos")]
 fn non_local_mounts() -> Vec<std::path::PathBuf> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -152,7 +186,7 @@ fn non_local_mounts() -> Vec<std::path::PathBuf> {
         .collect()
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "macos"))]
 fn non_local_mounts() -> Vec<std::path::PathBuf> {
     Vec::new()
 }
@@ -272,8 +306,9 @@ fn compact_dir(
 
 #[tauri::command]
 pub fn list_directory(path: String) -> Result<Vec<DirEntry>, String> {
-    with_deadline("list_directory", FS_DEADLINE, move || {
-        list_directory_within(std::path::Path::new(&path), &non_local_mounts())
+    let scan_path = path.clone();
+    with_deadline(format!("list_directory {path}"), FS_DEADLINE, move || {
+        list_directory_within(std::path::Path::new(&scan_path), &non_local_mounts())
     })?
 }
 
@@ -557,7 +592,7 @@ mod tests {
     }
     #[test]
     fn with_deadline_returns_the_value_when_the_work_is_fast() {
-        let got = with_deadline("fast", std::time::Duration::from_secs(5), || 42);
+        let got = with_deadline("fast".to_string(), std::time::Duration::from_secs(5), || 42);
         assert_eq!(got, Ok(42));
     }
 
@@ -565,10 +600,25 @@ mod tests {
     fn with_deadline_gives_up_instead_of_waiting_forever() {
         let start = std::time::Instant::now();
         let got: Result<(), String> =
-            with_deadline("slow", std::time::Duration::from_millis(50), || {
+            with_deadline("slow".to_string(), std::time::Duration::from_millis(50), || {
                 std::thread::sleep(std::time::Duration::from_secs(30));
             });
         assert!(got.is_err());
         assert!(start.elapsed() < std::time::Duration::from_secs(2));
+    }
+    #[test]
+    fn a_second_call_for_a_parked_key_fails_fast_instead_of_leaking_a_thread() {
+        let key = "parked".to_string();
+        let first: Result<(), String> =
+            with_deadline(key.clone(), std::time::Duration::from_millis(50), || {
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            });
+        assert!(first.is_err());
+
+        let start = std::time::Instant::now();
+        let second: Result<(), String> =
+            with_deadline(key, std::time::Duration::from_secs(5), || {});
+        assert!(second.unwrap_err().contains("still waiting"));
+        assert!(start.elapsed() < std::time::Duration::from_millis(500));
     }
 }
