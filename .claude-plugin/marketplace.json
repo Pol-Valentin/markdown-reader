@@ -1,0 +1,17 @@
+{
+  "name": "markdown-reader",
+  "owner": {
+    "name": "Pol-Valentin Cami",
+    "email": "polvalentin@evaneos.com"
+  },
+  "plugins": [
+    {
+      "name": "markdown-reader",
+      "source": "./",
+      "description": "Open Markdown files in the Markdown Reader app with live reload, Mermaid rendering, and inline comments back to Claude.",
+      "version": "1.0.0",
+      "category": "developer-tools",
+      "tags": ["markdown", "viewer", "tauri", "mcp", "mermaid"]
+    }
+  ]
+}

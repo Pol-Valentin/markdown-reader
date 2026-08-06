@@ -14,9 +14,16 @@ import { tmpdir } from 'os'
 const RUNTIME_DIR = process.env.XDG_RUNTIME_DIR
   ?? (process.platform === 'linux' ? `/run/user/${process.getuid()}` : tmpdir())
 
-// Resolve path to the markdown-reader binary (sibling to channel/ dir)
+// Resolve path to the markdown-reader binary.
+// Order of precedence:
+//   1. MARKDOWN_READER_BIN env var (explicit override)
+//   2. Installed app on macOS (/Applications/Markdown Reader.app)
+//   3. Dev binary in src-tauri/target/release/ (sibling to channel/ dir)
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const READER_BINARY = resolve(__dirname, '../src-tauri/target/release/markdown-reader')
+const MACOS_INSTALLED_BIN = '/Applications/Markdown Reader.app/Contents/MacOS/markdown-reader'
+const DEV_BIN = resolve(__dirname, '../src-tauri/target/release/markdown-reader')
+const READER_BINARY = process.env.MARKDOWN_READER_BIN
+  ?? (process.platform === 'darwin' && existsSync(MACOS_INSTALLED_BIN) ? MACOS_INSTALLED_BIN : DEV_BIN)
 
 // --- Session ID ---
 const SESSION_ID = randomUUID()
